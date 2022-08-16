@@ -13,6 +13,9 @@ import librosa
 
 from kymatio.scattering1d.utils import compute_meta_scattering
 import torch
+from kymatio.torch import Scattering1D
+from time import time
+from ssqueezepy import ssq_cwt
 
 plot.switch_backend('agg')
 import shutil
@@ -378,8 +381,8 @@ class FeatureClass:
         self._feat_dir_norm = self.get_normalized_feat_dir()
         for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', 'IPD_Sin']:
             if feat_name in self._feature_list:
-                create_folder(self._feat_dir_norm + feat_name)
                 for scaler_type in self._scaler_type:
+                    create_folder(self._feat_dir_norm + scaler_type + feat_name)
                     feat_wts = self.get_normalized_wts_file() + scaler_type + feat_name
                     if self._is_eval:
                         feat_scaler = joblib.load(feat_wts)
@@ -395,11 +398,307 @@ class FeatureClass:
                         print('{}: {}'.format(file_cnt, file_name))
                         feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
                         nb_ch = feat.shape[-1]
-                        feat_scl = feat_scaler.transform(feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+                        feat_scl = feat_scaler.transform(
+                            feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
                             self._max_feat_frames, nb_ch, -1).transpose((0, 2, 1))
-                        np.save(os.path.join(self._feat_dir_norm + feat_name, file_name), feat_scl)
+                        np.save(os.path.join(self._feat_dir_norm + scaler_type + feat_name, file_name), feat_scl)
                     del feat
                     del feat_scl
+
+    def extract_scatter_wavelet(self):
+        # here we extract scatter wavelet. in processing stage we process different orders per our need. also,
+        # scatter wavelet is not a very good feature for seld setting up folders
+        self._feat_dir = self.get_unnormalized_feat_dir() + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}'
+        create_folder(self._feat_dir)
+
+        # extraction starts
+        print('Instantiating scattering object:')
+        print('\t\taud_dir {}\n\t\tdesc_dir {}\n\t\tfeat_dir {}'.format(
+            self._aud_dir, self._desc_dir, self._feat_dir))
+        scattering = Scattering1D(self._scatter_wavelet_J, self._audio_max_len_samples, self._scatter_wavelet_Q)
+        scattering.cuda()
+        for split in os.listdir(self._aud_dir):
+            print('Split: {}'.format(split))
+            for file_cnt, file_name in enumerate(os.listdir(os.path.join(self._aud_dir, split))):
+                t0 = time()
+                wav_filename = '{}.wav'.format(file_name.split('.')[0])
+                audio_file, _ = self._load_audio(os.path.join(self._aud_dir, split, wav_filename))
+                x = torch.tensor(audio_file.T).cuda()
+                Sx = scattering(x.contiguous().float())
+
+                print('\t{}: {}, {}'.format(file_cnt, file_name, Sx.shape) + f'done in {time() - t0}')
+                np.save(os.path.join(self._feat_dir, '{}.npy'.format(wav_filename.split('.')[0])), Sx.cpu())
+
+    def preprocess_scatter_wavelet(self):
+        self._feat_dir = self.get_unnormalized_feat_dir() + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}'
+        self._feat_dir_norm = self.get_normalized_feat_dir()  # + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}'
+        for feat_name in [f'_scatter_wavelet_Q{Q}_order_1', f'_scatter_wavelet_Q{Q}_order_2', f'_scatter_wavelet_Q{Q}']:
+            if feat_name in self._feature_list:
+                indicess = self._order1_indices if 'order_1' in feat_name else self._order2_indices if 'order_2' in feat_name else self._order21_indices
+                for scaler_type in self._scaler_type:
+                    create_folder(self._feat_dir_norm + scaler_type + feat_name)
+                    swt_wts = self.get_normalized_wts_file() + scaler_type + feat_name
+                    if self._is_eval:
+                        swt_scaler = joblib.load(swt_wts)
+                    else:
+                        swt_scaler = preprocessing.MinMaxScaler() if scaler_type == 'minmax' else preprocessing.StandardScaler()
+                        for file_cnt, file_name in enumerate(os.listdir(self._feat_dir)):
+                            print('{}: {}'.format(file_cnt, file_name))
+                            feat = librosa.power_to_db(np.load(os.path.join(self._feat_dir, file_name)).T)
+                            t_axis = feat.shape[0]
+                            swt_scaler.partial_fit(feat[:, indicess, :].transpose((0, 2, 1)).reshape(t_axis, -1))
+                        joblib.dump(swt_scaler, swt_wts)
+                        del feat
+                    for file_cnt, file_name in enumerate(os.listdir(self._feat_dir)):
+                        print('{}: {}'.format(file_cnt, file_name))
+                        feat = librosa.power_to_db(np.load(os.path.join(self._feat_dir, file_name)).T)[:, indicess, :]
+                        feat_scl = swt_scaler.transform(
+                            feat.transpose((0, 2, 1)).reshape(feat.shape[0], -1)).reshape(
+                            feat.shape[0], feat.shape[-1], -1).transpose((0, 2, 1))
+                        np.save(os.path.join(self._feat_dir_norm + scaler_type + feat_name, file_name), feat_scl)
+                    del feat
+                    del feat_scl
+
+        create_folder(self._feat_dir + '_order_0')
+        print('Saving order zero scatter wavelet in case they come in handy for later use')
+        for file_cnt, file_name in enumerate(os.listdir(self._feat_dir)):
+            print('{}: {}'.format(file_cnt, file_name))
+            feat_file = np.load(os.path.join(self._feat_dir, file_name)).T
+            np.save(os.path.join(self._feat_dir + '_order_0', file_name),
+                    np.squeeze(feat_file[:, self._order0_indices, :]))
+
+    def extract_cwt_ssq(self):
+        # here we extract CWT and SSQ features along with their respective IPD replicas
+        os.environ['SSQ_GPU'] = '1'
+        self._feat_dir = self.get_unnormalized_feat_dir()
+        for feat_name in ['_CWT_abs', '_SSQ_abs', '_CWT_IPD', '_SSQ_IPD', '_CWT_IPD_Cos', '_SSQ_IPD_Cos',
+                          '_CWT_IPD_Sin', '_SSQ_IPD_Sin']:
+            if feat_name in self._feature_list:
+                create_folder(self._feat_dir + feat_name)
+        print('Extracting CWT and SSQ:')
+        print('\t\taud_dir {}\n\t\tdesc_dir {}\n\t\tfeat_dir {}'.format(
+            self._aud_dir, self._desc_dir, self._feat_dir))
+        # sample_audio, _ = self._load_audio('E:\\SELD2021\\foa_dev\\dev-train\\fold1_room1_mix001.wav')
+        sample_audio, _ = self._load_audio(os.path.join(self._aud_dir, os.listdir(self._aud_dir)[0], os.listdir(
+            os.path.join(self._aud_dir, os.listdir(self._aud_dir)[0]))[0]))
+        sample_file = np.squeeze(sample_audio[:, 0])
+        torch.cuda.empty_cache()
+        Twx, Wx, *_ = ssq_cwt(sample_file, wavelet='morlet', nv=32, fs=self._fs, vectorized=False)
+        Twx_shape = list(Twx.shape)
+        Wx_shape = list(Wx.shape)
+        torch.cuda.empty_cache()
+        for split in os.listdir(self._aud_dir):
+            print('Split: {}'.format(split))
+            for file_cnt, file_name in enumerate(os.listdir(os.path.join(self._aud_dir, split))):
+                wav_filename = '{}.wav'.format(file_name.split('.')[0])
+                audio_file, _ = self._load_audio(os.path.join(self._aud_dir, split, wav_filename))
+                Twx = torch.empty(self._nb_channels, Twx_shape[0], Twx_shape[-1], dtype=torch.complex64)
+                Wx = torch.empty(self._nb_channels, Wx_shape[0], Wx_shape[-1], dtype=torch.complex64)
+                for ch in range(self._nb_channels):
+                    x = np.squeeze(audio_file[:, ch])
+                    t0 = time()
+                    Twx[ch, :, :], Wx[ch, :, :], *_ = ssq_cwt(x, wavelet='morlet', nv=32, fs=self._fs, vectorized=False)
+                    # Note: the format of time and frequency axis are different from the rest
+                    print(f'past time for one channel {time() - t0}')
+                    torch.cuda.empty_cache()
+                # for feat_name in ['_CWT_abs', '_SSQ_abs', '_CWT_IPD', '_SSQ_IPD', '_CWT_IPD_Cos', '_SSQ_IPD_Cos',
+                #                   '_CWT_IPD_Sin', '_SSQ_IPD_Sin']:
+
+                # In the saving Process we fix the dimensions, so they match the rest of the features.
+                if '_CWT_abs' in self._feature_list:
+                    Wx_abs = librosa.power_to_db(
+                        torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(np.abs(Wx.cpu())))
+                    np.save(os.path.join(self._feat_dir + '_CWT_abs', '{}.npy'.format(wav_filename.split('.')[0])),
+                            Wx_abs.T)
+                if '_SSQ_abs' in self._feature_list:
+                    Twx_abs = librosa.power_to_db(
+                        torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(np.abs(Twx.cpu())))
+                    np.save(os.path.join(self._feat_dir + '_SSQ_abs', '{}.npy'.format(wav_filename.split('.')[0])),
+                            Twx_abs.T)
+                if '_CWT_IPD' in self._feature_list:
+                    Wx_IPD = (torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                        torch.tensor(np.angle(Wx.cpu()[1:, :, :] * np.conj(Wx.cpu()[0, :, :]))))) / np.pi
+                    np.save(os.path.join(self._feat_dir + '_CWT_IPD', '{}.npy'.format(wav_filename.split('.')[0])),
+                            Wx_IPD.permute(2, 1, 0))
+                if '_SSQ_IPD' in self._feature_list:
+                    Twx_IPD = (torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                        torch.tensor(np.angle(Twx.cpu()[1:, :, :] * np.conj(Twx.cpu()[0, :, :]))))) / np.pi
+                    np.save(os.path.join(self._feat_dir + '_SSQ_IPD', '{}.npy'.format(wav_filename.split('.')[0])),
+                            Twx_IPD.permute(2, 1, 0))
+                if '_CWT_IPD_Cos' in self._feature_list:
+                    Wx_IPD_Cos = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                        torch.tensor(np.cos(np.angle(Wx.cpu()[1:, :, :] * np.conj(Wx.cpu()[0, :, :])))))
+                    np.save(os.path.join(self._feat_dir + '_CWT_IPD_Cos', '{}.npy'.format(wav_filename.split('.')[0])),
+                            Wx_IPD_Cos.permute(2, 1, 0))
+                if '_SSQ_IPD_Cos' in self._feature_list:
+                    Twx_IPD_Cos = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                        torch.tensor(np.cos(np.angle(Twx.cpu()[1:, :, :] * np.conj(Twx.cpu()[0, :, :])))))
+                    np.save(os.path.join(self._feat_dir + '_SSQ_IPD_Cos', '{}.npy'.format(wav_filename.split('.')[0])),
+                            Twx_IPD_Cos.permute(2, 1, 0))
+                if '_CWT_IPD_Sin' in self._feature_list:
+                    Wx_IPD_Sin = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                        torch.tensor(np.sin(np.angle(Wx.cpu()[1:, :, :] * np.conj(Wx.cpu()[0, :, :])))))
+                    np.save(os.path.join(self._feat_dir + '_CWT_IPD_Sin', '{}.npy'.format(wav_filename.split('.')[0])),
+                            Wx_IPD_Sin.permute(2, 1, 0))
+                if '_SSQ_IPD_Sin' in self._feature_list:
+                    Twx_IPD_Sin = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                        torch.tensor(np.sin(np.angle(Twx.cpu()[1:, :, :] * np.conj(Twx.cpu()[0, :, :])))))
+                    np.save(os.path.join(self._feat_dir + '_SSQ_IPD_Sin', '{}.npy'.format(wav_filename.split('.')[0])),
+                            Twx_IPD_Sin.permute(2, 1, 0))
+
+                del Twx
+                del Wx
+
+    def preprocess_cwt_ssq(self):
+        self._feat_dir = self.get_unnormalized_feat_dir()
+        self._feat_dir_norm = self.get_normalized_feat_dir()
+        for feat_name in ['_CWT_abs', '_SSQ_abs', '_CWT_IPD', '_SSQ_IPD', '_CWT_IPD_Cos', '_SSQ_IPD_Cos',
+                          '_CWT_IPD_Sin', '_SSQ_IPD_Sin']:
+            if feat_name in self._feature_list:
+                for scaler_type in self._scaler_type:
+                    create_folder(self._feat_dir_norm + scaler_type + feat_name)
+                    feat_wts = self.get_normalized_wts_file() + scaler_type + feat_name
+                    if self._is_eval:
+                        feat_scaler = joblib.load(feat_wts)
+                    else:
+                        feat_scaler = preprocessing.MinMaxScaler() if scaler_type == 'minmax' else preprocessing.StandardScaler()
+                        for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
+                            print('{}: {}'.format(file_cnt, file_name))
+                            feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
+                            feat_scaler.partial_fit(feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1))
+                        joblib.dump(feat_scaler, feat_wts)
+                        del feat
+                    for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
+                        print('{}: {}'.format(file_cnt, file_name))
+                        feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
+                        feat_std = feat_scaler.transform(
+                            feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+                            self._max_feat_frames, feat.shape[-1], -1).transpose((0, 2, 1))
+                        np.save(os.path.join(self._feat_dir_norm + feat_name, file_name), feat_std)
+
+                        del feat
+                        del feat_std
+
+    def extract_norm_mel_for_spec_etc(self):
+        # Here we extract the Mel bands of spectrogram, IPD, and IV and standardize them. you have to extract non mel
+        # features first and then run this function if self._feature_list != ['_spec', '_IPD', '_IPD_Cos',
+        # '_IPD_Sin', '_IV']: raise ValueError("Wrong feature list")
+        self._feat_dir = self.get_unnormalized_feat_dir()
+        self._feat_dir_norm = self.get_normalized_feat_dir()
+        for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', 'IPD_Sin']:
+            if feat_name in self._feature_list:
+                create_folder(self._feat_dir + '_mel' + feat_name)
+                for scaler_type in self._scaler_type:
+                    create_folder(self._feat_dir_norm + '_mel' + scaler_type + feat_name)
+                    feat_wts = self.get_normalized_wts_file() + '_mel' + scaler_type + feat_name
+                    if self._is_eval:
+                        feat_scaler = joblib.load(feat_wts)
+                        for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
+                            # if file_cnt > 1:
+                            #     continue
+                            temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
+                            mel_feat = np.zeros((self._max_feat_frames, self._nb_mel_bins, temp_feat.shape[-1]))
+                            if temp_feat.shape[0] < self._max_feat_frames:
+                                temp_feat = self.costume_padding(temp_feat, self._max_feat_frames)
+
+                            for ch in range(temp_feat.shape[-1]):
+                                mel_feat[:, :, ch] = np.dot(np.squeeze(temp_feat[:, :, ch]), self._mel_wts)
+
+                            print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
+                            np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+                            del temp_feat
+                            del mel_feat
+                    else:
+                        feat_scaler = preprocessing.MinMaxScaler() if scaler_type == 'minmax' else preprocessing.StandardScaler()
+                        for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
+                            # if file_cnt > 1:
+                            #     continue
+                            if os.path.exists(os.path.join(self._feat_dir + '_mel' + feat_name, file_name)):
+                                mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
+                            else:
+                                temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
+                                mel_feat = np.zeros((self._max_feat_frames, self._nb_mel_bins, temp_feat.shape[-1]))
+                                if temp_feat.shape[0] < self._max_feat_frames:
+                                    temp_feat = self.costume_padding(temp_feat, self._max_feat_frames)
+
+                                for ch in range(temp_feat.shape[-1]):
+                                    mel_feat[:, :, ch] = np.dot(np.squeeze(temp_feat[:, :, ch]), self._mel_wts)
+
+                                print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
+                                np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+
+                            feat_scaler.partial_fit(mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1))
+
+                            del temp_feat
+                            del mel_feat
+
+                        joblib.dump(feat_scaler, feat_wts)
+
+                    for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + '_mel' + feat_name)):
+                        # if file_cnt > 1:
+                        #     continue
+                        print('{}: {}-{}'.format(file_cnt, feat_name, file_name))
+                        mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
+
+                        mel_feat_norm = feat_scaler.transform(
+                            mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+                            self._max_feat_frames,
+                            mel_feat.shape[-1],
+                            -1).transpose(
+                            (0, 2, 1))
+                        np.save(os.path.join(self._feat_dir_norm + '_mel' + scaler_type + feat_name, file_name),
+                                mel_feat_norm)
+
+                        del mel_feat
+                        del mel_feat_norm
+
+
+
+
+
+
+
+
+
+
+
+
+        print(f'Extracting mel_{feat_name}:')
+        print('\t\taud_dir {}\n\t\tdesc_dir {}\n\t\tfeat_dir {}'.format(
+            self._aud_dir, self._desc_dir, self._feat_dir))
+        for split in os.listdir(self._aud_dir):
+            print('Split: {}'.format(split))
+            for file_cnt, file_name in enumerate(os.listdir(os.path.join(self._aud_dir, split))):
+                print('\t{}: {}'.format(file_cnt, file_name))
+                # if file_cnt == 2:
+                #     break
+                spect = None
+                wav_filename = '{}.wav'.format(file_name.split('.')[0])
+                spect = self._get_spectrogram_for_file(os.path.join(self._aud_dir, split, wav_filename))
+                for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', 'IPD_Sin']:
+                    if feat_name in self._feature_list:
+                        if feat_name == '_spec':
+                            log_spect = librosa.power_to_db((np.abs(spect)) ** 2)
+                            np.save(os.path.join(self._feat_dir + '_spec', '{}.npy'.format(wav_filename.split('.')[0])),
+                                    log_spect)
+                        elif feat_name == '_IV':
+                            _, foa_iv = self._get_foa_intensity_vectors(spect)
+                            np.save(os.path.join(self._feat_dir + '_IV', '{}.npy'.format(wav_filename.split('.')[0])),
+                                    foa_iv)
+                        else:
+                            phase_vector = np.angle(spect[..., 1:] * np.conj(spect[:, :, 0, None]))
+                            if feat_name == '_IPD':
+                                np.save(
+                                    os.path.join(self._feat_dir + '_IPD', '{}.npy'.format(wav_filename.split('.')[0])),
+                                    phase_vector / np.pi)
+                            elif feat_name == '_IPD_Cos':
+                                np.save(os.path.join(self._feat_dir + '_IPD_Cos',
+                                                     '{}.npy'.format(wav_filename.split('.')[0])),
+                                        np.cos(phase_vector))
+                            elif feat_name == 'IPD_Sin':
+                                np.save(os.path.join(self._feat_dir + '_IPD_Sin',
+                                                     '{}.npy'.format(wav_filename.split('.')[0])),
+                                        np.sin(phase_vector))
 
 
 
