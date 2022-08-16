@@ -13,6 +13,7 @@ As the baseline method for the [SELD task](https://www.aane.in/research/computat
 
 NOTE: The baseline only supports detection of one instance of a sound class in a given time frame. However, the training data can consist of multiple instances of the same sound class in a given time frame. If participants are planning to build an SELD system that can detect such multiple instances of the same class, then you will have to modify this code accordingly. On the other hand, the provided metric code - `SELD_evaluation_metrics.py` and the class wrapper for it `cls_compute_seld_results.py` both support multiple instances of the same class. So you can continue to use them for your multi-instance SELD system.
 
+NOTE: This is a branch from the original repository and is edited by Masoud Mohtadifar to include some further feature extractions, some data augmentations and making the code compatible with GPU clusters and multi-gpu trainings. This is done for the FOA sound format
 ## BASELINE METHOD
 
 In comparison to the SELDnet studied in [1], we have changed the output format to ACCDOA [2] to improve its performance.
