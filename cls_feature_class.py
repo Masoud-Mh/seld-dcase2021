@@ -16,6 +16,8 @@ import torch
 from kymatio.torch import Scattering1D
 from time import time
 from ssqueezepy import ssq_cwt
+import warnings
+from matplotlib import pyplot as plt
 
 plot.switch_backend('agg')
 import shutil
@@ -68,14 +70,15 @@ class FeatureClass:
         self._eps = 1e-8
         self._nb_channels = 4
 
-        self._wave_let = params['wavelet_family']  # for discrete wavelet transform
-        self._wave_let_mode = params['wavelet_mode']  # for discrete wavelet transform
+        # self._wave_let = params['wavelet_family']  # for discrete wavelet transform
+        # self._wave_let_mode = params['wavelet_mode']  # for discrete wavelet transform
         self._scatter_wavelet_Q = params['scatter_wavelet_Q']  # for scatter wavelet transform
         self._scatter_wavelet_J = params['scatter_wavelet_J']  # for scatter wavelet transform
-        self._cwave_let = params['cwavelet_family']  # for continuous wavelet transform
-        self._cwave_let_mode = params['cwavelet_mode']  # for continuous wavelet transform
+        # self._cwave_let = params['cwavelet_family']  # for continuous wavelet transform
+        # self._cwave_let_mode = params['cwavelet_mode']  # for continuous wavelet transform
         self._is_mel = params['is_mel']
         self._scaler_type = params['scaler_type']
+        self._quick_test = params['quick_test']
 
         # Sound event classes dictionary
         self._unique_classes = params['unique_classes']
@@ -243,6 +246,39 @@ class FeatureClass:
         out = torch.nn.AvgPool2d((arr.shape[1] // pad_size, 1), stride=(arr.shape[1] // pad_size, 1))(torch.tensor(out))
         return out
 
+    def get_costume_mel_band(self, sr, freqs, n_mels, fmin=0.0, fmax=None, htk=False, norm='slaney', dtype=np.float):
+        if fmax is None:
+            fmax = float(sr) / 2
+        # Initialize the weights
+        n_mels = int(n_mels)
+        weights = np.zeros((n_mels, len(freqs)), dtype=dtype)
+        mel_f = librosa.core.convert.mel_frequencies(n_mels + 2, fmin=fmin, fmax=fmax, htk=htk)
+        fdiff = np.diff(mel_f)
+        ramps = np.subtract.outer(mel_f, freqs)
+        for i in range(n_mels):
+            # lower and upper slopes for all bins
+            lower = -ramps[i] / fdiff[i]
+            upper = ramps[i + 2] / fdiff[i + 1]
+            # .. then intersect them with each other and zero
+            weights[i] = np.maximum(0, np.minimum(lower, upper))
+        if norm == "slaney":
+            # Slaney-style mel is scaled to be approx constant energy per channel
+            enorm = 2.0 / (mel_f[2: n_mels + 2] - mel_f[:n_mels])
+            weights *= enorm[:, np.newaxis]
+        else:
+            weights = librosa.util.normalize(weights, norm=norm, axis=-1)
+        # Only check weights if f_mel[0] is positive
+        if not np.all((mel_f[:-2] == 0) | (weights.max(axis=1) > 0)):
+            # This means we have an empty channel somewhere
+            warnings.warn(
+                "Empty filters detected in mel frequency basis. "
+                "Some channels will produce empty responses. "
+                "Try increasing your sampling rate (and fmax) or "
+                "reducing n_mels.",
+                stacklevel=2,
+            )
+        return weights
+
     # ------------------------------- EXTRACT FEATURE AND PREPROCESS IT -------------------------------
     def extract_all_feature(self):
         # this is to extract the original mel-spectrogram and mel-IV features
@@ -257,6 +293,9 @@ class FeatureClass:
         for split in os.listdir(self._aud_dir):
             print('Split: {}'.format(split))
             for file_cnt, file_name in enumerate(os.listdir(os.path.join(self._aud_dir, split))):
+                if self._quick_test:
+                    if file_cnt > 1:
+                        break
                 wav_filename = '{}.wav'.format(file_name.split('.')[0])
                 spect = self._get_spectrogram_for_file(os.path.join(self._aud_dir, split, wav_filename))
 
@@ -302,6 +341,9 @@ class FeatureClass:
 
             spec_scaler = preprocessing.StandardScaler()
             for file_cnt, file_name in enumerate(os.listdir(self._feat_dir)):
+                if self._quick_test:
+                    if file_cnt > 1:
+                        break
                 print('{}: {}'.format(file_cnt, file_name))
                 feat_file = np.load(os.path.join(self._feat_dir, file_name))
                 spec_scaler.partial_fit(feat_file.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1))  # do the
@@ -316,6 +358,9 @@ class FeatureClass:
         print('Normalizing feature files:')
         print('\t\tfeat_dir_norm {}'.format(self._feat_dir_norm))
         for file_cnt, file_name in enumerate(os.listdir(self._feat_dir)):
+            if self._quick_test:
+                if file_cnt > 1:
+                    break
             print('{}: {}'.format(file_cnt, file_name))
             feat_file = np.load(os.path.join(self._feat_dir, file_name))
             feat_file_shape = feat_file.shape
@@ -336,7 +381,7 @@ class FeatureClass:
     def extract_spectrogram_etc(self):
         # here we extract spectrogram, IPD, and IV without MEL based on self._feature_list
         self._feat_dir = self.get_unnormalized_feat_dir()
-        for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', 'IPD_Sin']:
+        for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', '_IPD_Sin']:
             if feat_name in self._feature_list:
                 create_folder(self._feat_dir + feat_name)
         print(f'Extracting {feat_name}:')
@@ -346,12 +391,13 @@ class FeatureClass:
             print('Split: {}'.format(split))
             for file_cnt, file_name in enumerate(os.listdir(os.path.join(self._aud_dir, split))):
                 print('\t{}: {}'.format(file_cnt, file_name))
-                # if file_cnt == 2:
-                #     break
+                if self._quick_test:
+                    if file_cnt > 1:
+                        break
                 spect = None
                 wav_filename = '{}.wav'.format(file_name.split('.')[0])
                 spect = self._get_spectrogram_for_file(os.path.join(self._aud_dir, split, wav_filename))
-                for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', 'IPD_Sin']:
+                for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', '_IPD_Sin']:
                     if feat_name in self._feature_list:
                         if feat_name == '_spec':
                             log_spect = librosa.power_to_db((np.abs(spect)) ** 2)
@@ -371,7 +417,7 @@ class FeatureClass:
                                 np.save(os.path.join(self._feat_dir + '_IPD_Cos',
                                                      '{}.npy'.format(wav_filename.split('.')[0])),
                                         np.cos(phase_vector))
-                            elif feat_name == 'IPD_Sin':
+                            elif feat_name == '_IPD_Sin':
                                 np.save(os.path.join(self._feat_dir + '_IPD_Sin',
                                                      '{}.npy'.format(wav_filename.split('.')[0])),
                                         np.sin(phase_vector))
@@ -379,35 +425,49 @@ class FeatureClass:
     def preprocess_spec_etc(self):
         self._feat_dir = self.get_unnormalized_feat_dir()
         self._feat_dir_norm = self.get_normalized_feat_dir()
-        for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', 'IPD_Sin']:
+        for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', '_IPD_Sin']:
             if feat_name in self._feature_list:
                 for scaler_type in self._scaler_type:
-                    create_folder(self._feat_dir_norm + scaler_type + feat_name)
+                    create_folder(self._feat_dir_norm + '_' + scaler_type + feat_name)
                     feat_wts = self.get_normalized_wts_file() + scaler_type + feat_name
                     if self._is_eval:
                         feat_scaler = joblib.load(feat_wts)
                     else:
                         feat_scaler = preprocessing.MinMaxScaler() if scaler_type == 'minmax' else preprocessing.StandardScaler()
                         for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
+                            if self._quick_test:
+                                if file_cnt > 1:
+                                    break
                             print('{}: {}'.format(file_cnt, file_name))
                             feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
                             feat_scaler.partial_fit(feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1))
+                            del feat
                         joblib.dump(feat_scaler, feat_wts)
-                        del feat
                     for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
+                        if self._quick_test:
+                            if file_cnt > 1:
+                                break
                         print('{}: {}'.format(file_cnt, file_name))
                         feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
                         nb_ch = feat.shape[-1]
                         feat_scl = feat_scaler.transform(
                             feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
                             self._max_feat_frames, nb_ch, -1).transpose((0, 2, 1))
-                        np.save(os.path.join(self._feat_dir_norm + scaler_type + feat_name, file_name), feat_scl)
-                    del feat
-                    del feat_scl
+                        np.save(os.path.join(self._feat_dir_norm + '_' + scaler_type + feat_name, file_name), feat_scl)
+                        del feat
+                        del feat_scl
 
     def extract_scatter_wavelet(self):
         # here we extract scatter wavelet. in processing stage we process different orders per our need. also,
         # scatter wavelet is not a very good feature for seld setting up folders
+        go_pass = False
+        for feat_name in self._feature_list:
+            if 'scatter' in feat_name:
+                go_pass = True
+
+        if not go_pass:
+            print("you don't have this feature in your list")
+            return 0
         self._feat_dir = self.get_unnormalized_feat_dir() + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}'
         create_folder(self._feat_dir)
 
@@ -420,6 +480,9 @@ class FeatureClass:
         for split in os.listdir(self._aud_dir):
             print('Split: {}'.format(split))
             for file_cnt, file_name in enumerate(os.listdir(os.path.join(self._aud_dir, split))):
+                if self._quick_test:
+                    if file_cnt > 1:
+                        break
                 t0 = time()
                 wav_filename = '{}.wav'.format(file_name.split('.')[0])
                 audio_file, _ = self._load_audio(os.path.join(self._aud_dir, split, wav_filename))
@@ -432,42 +495,52 @@ class FeatureClass:
     def preprocess_scatter_wavelet(self):
         self._feat_dir = self.get_unnormalized_feat_dir() + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}'
         self._feat_dir_norm = self.get_normalized_feat_dir()  # + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}'
-        for feat_name in [f'_scatter_wavelet_Q{Q}_order_1', f'_scatter_wavelet_Q{Q}_order_2', f'_scatter_wavelet_Q{Q}']:
+        for feat_name in [f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_1', f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_2', f'_scatter_wavelet_Q{self._scatter_wavelet_Q}']:
             if feat_name in self._feature_list:
                 indicess = self._order1_indices if 'order_1' in feat_name else self._order2_indices if 'order_2' in feat_name else self._order21_indices
                 for scaler_type in self._scaler_type:
-                    create_folder(self._feat_dir_norm + scaler_type + feat_name)
+                    create_folder(self._feat_dir_norm + '_' + scaler_type + feat_name)
                     swt_wts = self.get_normalized_wts_file() + scaler_type + feat_name
                     if self._is_eval:
                         swt_scaler = joblib.load(swt_wts)
                     else:
                         swt_scaler = preprocessing.MinMaxScaler() if scaler_type == 'minmax' else preprocessing.StandardScaler()
                         for file_cnt, file_name in enumerate(os.listdir(self._feat_dir)):
+                            if self._quick_test:
+                                if file_cnt > 1:
+                                    break
                             print('{}: {}'.format(file_cnt, file_name))
                             feat = librosa.power_to_db(np.load(os.path.join(self._feat_dir, file_name)).T)
                             t_axis = feat.shape[0]
                             swt_scaler.partial_fit(feat[:, indicess, :].transpose((0, 2, 1)).reshape(t_axis, -1))
+                            del feat
                         joblib.dump(swt_scaler, swt_wts)
-                        del feat
+
                     for file_cnt, file_name in enumerate(os.listdir(self._feat_dir)):
+                        if self._quick_test:
+                            if file_cnt > 1:
+                                break
                         print('{}: {}'.format(file_cnt, file_name))
                         feat = librosa.power_to_db(np.load(os.path.join(self._feat_dir, file_name)).T)[:, indicess, :]
                         feat_scl = swt_scaler.transform(
                             feat.transpose((0, 2, 1)).reshape(feat.shape[0], -1)).reshape(
                             feat.shape[0], feat.shape[-1], -1).transpose((0, 2, 1))
-                        np.save(os.path.join(self._feat_dir_norm + scaler_type + feat_name, file_name), feat_scl)
-                    del feat
-                    del feat_scl
+                        np.save(os.path.join(self._feat_dir_norm + '_' + scaler_type + feat_name, file_name), feat_scl)
+                        del feat
+                        del feat_scl
 
         create_folder(self._feat_dir + '_order_0')
         print('Saving order zero scatter wavelet in case they come in handy for later use')
         for file_cnt, file_name in enumerate(os.listdir(self._feat_dir)):
+            if self._quick_test:
+                if file_cnt > 1:
+                    break
             print('{}: {}'.format(file_cnt, file_name))
             feat_file = np.load(os.path.join(self._feat_dir, file_name)).T
             np.save(os.path.join(self._feat_dir + '_order_0', file_name),
                     np.squeeze(feat_file[:, self._order0_indices, :]))
 
-    def extract_cwt_ssq(self):
+    def extract_cwt_ssq(self, nv_num=8):
         # here we extract CWT and SSQ features along with their respective IPD replicas
         os.environ['SSQ_GPU'] = '1'
         self._feat_dir = self.get_unnormalized_feat_dir()
@@ -483,13 +556,16 @@ class FeatureClass:
             os.path.join(self._aud_dir, os.listdir(self._aud_dir)[0]))[0]))
         sample_file = np.squeeze(sample_audio[:, 0])
         torch.cuda.empty_cache()
-        Twx, Wx, *_ = ssq_cwt(sample_file, wavelet='morlet', nv=32, fs=self._fs, vectorized=False)
+        Twx, Wx, *_ = ssq_cwt(sample_file, wavelet='morlet', nv=nv_num, fs=self._fs, vectorized=False)
         Twx_shape = list(Twx.shape)
         Wx_shape = list(Wx.shape)
         torch.cuda.empty_cache()
         for split in os.listdir(self._aud_dir):
             print('Split: {}'.format(split))
             for file_cnt, file_name in enumerate(os.listdir(os.path.join(self._aud_dir, split))):
+                if self._quick_test:
+                    if file_cnt > 1:
+                        break
                 wav_filename = '{}.wav'.format(file_name.split('.')[0])
                 audio_file, _ = self._load_audio(os.path.join(self._aud_dir, split, wav_filename))
                 Twx = torch.empty(self._nb_channels, Twx_shape[0], Twx_shape[-1], dtype=torch.complex64)
@@ -497,7 +573,7 @@ class FeatureClass:
                 for ch in range(self._nb_channels):
                     x = np.squeeze(audio_file[:, ch])
                     t0 = time()
-                    Twx[ch, :, :], Wx[ch, :, :], *_ = ssq_cwt(x, wavelet='morlet', nv=32, fs=self._fs, vectorized=False)
+                    Twx[ch, :, :], Wx[ch, :, :], *_ = ssq_cwt(x, wavelet='morlet', nv=nv_num, fs=self._fs, vectorized=False)
                     # Note: the format of time and frequency axis are different from the rest
                     print(f'past time for one channel {time() - t0}')
                     torch.cuda.empty_cache()
@@ -556,25 +632,32 @@ class FeatureClass:
                           '_CWT_IPD_Sin', '_SSQ_IPD_Sin']:
             if feat_name in self._feature_list:
                 for scaler_type in self._scaler_type:
-                    create_folder(self._feat_dir_norm + scaler_type + feat_name)
+                    create_folder(self._feat_dir_norm + '_' + scaler_type + feat_name)
                     feat_wts = self.get_normalized_wts_file() + scaler_type + feat_name
                     if self._is_eval:
                         feat_scaler = joblib.load(feat_wts)
                     else:
                         feat_scaler = preprocessing.MinMaxScaler() if scaler_type == 'minmax' else preprocessing.StandardScaler()
                         for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
+                            if self._quick_test:
+                                if file_cnt > 1:
+                                    break
                             print('{}: {}'.format(file_cnt, file_name))
                             feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
                             feat_scaler.partial_fit(feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1))
+                            del feat
                         joblib.dump(feat_scaler, feat_wts)
-                        del feat
+
                     for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
+                        if self._quick_test:
+                            if file_cnt > 1:
+                                break
                         print('{}: {}'.format(file_cnt, file_name))
                         feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
                         feat_std = feat_scaler.transform(
                             feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
                             self._max_feat_frames, feat.shape[-1], -1).transpose((0, 2, 1))
-                        np.save(os.path.join(self._feat_dir_norm + feat_name, file_name), feat_std)
+                        np.save(os.path.join(self._feat_dir_norm + '_' + scaler_type + feat_name, file_name), feat_std)
 
                         del feat
                         del feat_std
@@ -583,19 +666,23 @@ class FeatureClass:
         # Here we extract the Mel bands of spectrogram, IPD, and IV and standardize them. you have to extract non mel
         # features first and then run this function if self._feature_list != ['_spec', '_IPD', '_IPD_Cos',
         # '_IPD_Sin', '_IV']: raise ValueError("Wrong feature list")
+        if not self._is_mel:
+            print('You have not asked for Mel features')
+            return 0
         self._feat_dir = self.get_unnormalized_feat_dir()
         self._feat_dir_norm = self.get_normalized_feat_dir()
-        for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', 'IPD_Sin']:
+        for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', '_IPD_Sin']:
             if feat_name in self._feature_list:
                 create_folder(self._feat_dir + '_mel' + feat_name)
                 for scaler_type in self._scaler_type:
-                    create_folder(self._feat_dir_norm + '_mel' + scaler_type + feat_name)
-                    feat_wts = self.get_normalized_wts_file() + '_mel' + scaler_type + feat_name
+                    create_folder(self._feat_dir_norm + '_mel_' + scaler_type + feat_name)
+                    feat_wts = self.get_normalized_wts_file() + '_mel_' + scaler_type + feat_name
                     if self._is_eval:
                         feat_scaler = joblib.load(feat_wts)
                         for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
-                            # if file_cnt > 1:
-                            #     continue
+                            if self._quick_test:
+                                if file_cnt > 1:
+                                    break
                             temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
                             mel_feat = np.zeros((self._max_feat_frames, self._nb_mel_bins, temp_feat.shape[-1]))
                             if temp_feat.shape[0] < self._max_feat_frames:
@@ -611,8 +698,9 @@ class FeatureClass:
                     else:
                         feat_scaler = preprocessing.MinMaxScaler() if scaler_type == 'minmax' else preprocessing.StandardScaler()
                         for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
-                            # if file_cnt > 1:
-                            #     continue
+                            if self._quick_test:
+                                if file_cnt > 1:
+                                    break
                             if os.path.exists(os.path.join(self._feat_dir + '_mel' + feat_name, file_name)):
                                 mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
                             else:
@@ -626,17 +714,17 @@ class FeatureClass:
 
                                 print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
                                 np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+                                del temp_feat
 
                             feat_scaler.partial_fit(mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1))
-
-                            del temp_feat
                             del mel_feat
 
                         joblib.dump(feat_scaler, feat_wts)
 
                     for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + '_mel' + feat_name)):
-                        # if file_cnt > 1:
-                        #     continue
+                        if self._quick_test:
+                            if file_cnt > 1:
+                                break
                         print('{}: {}-{}'.format(file_cnt, feat_name, file_name))
                         mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
 
@@ -646,64 +734,195 @@ class FeatureClass:
                             mel_feat.shape[-1],
                             -1).transpose(
                             (0, 2, 1))
-                        np.save(os.path.join(self._feat_dir_norm + '_mel' + scaler_type + feat_name, file_name),
+                        np.save(os.path.join(self._feat_dir_norm + '_mel_' + scaler_type + feat_name, file_name),
                                 mel_feat_norm)
 
                         del mel_feat
                         del mel_feat_norm
 
-
-
-
-
-
-
-
-
-
-
-
-        print(f'Extracting mel_{feat_name}:')
+    def extract_mel_for_cwt(self, nv_num=8):
+        if not self._is_mel:
+            print('You have not asked for Mel features')
+            return 0
+        os.environ['SSQ_GPU'] = '1'
+        self._feat_dir = self.get_unnormalized_feat_dir()
+        print('Extracting one dummy CWT and SSQ to get the frequencies:')
         print('\t\taud_dir {}\n\t\tdesc_dir {}\n\t\tfeat_dir {}'.format(
             self._aud_dir, self._desc_dir, self._feat_dir))
-        for split in os.listdir(self._aud_dir):
-            print('Split: {}'.format(split))
-            for file_cnt, file_name in enumerate(os.listdir(os.path.join(self._aud_dir, split))):
-                print('\t{}: {}'.format(file_cnt, file_name))
-                # if file_cnt == 2:
-                #     break
-                spect = None
-                wav_filename = '{}.wav'.format(file_name.split('.')[0])
-                spect = self._get_spectrogram_for_file(os.path.join(self._aud_dir, split, wav_filename))
-                for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', 'IPD_Sin']:
-                    if feat_name in self._feature_list:
-                        if feat_name == '_spec':
-                            log_spect = librosa.power_to_db((np.abs(spect)) ** 2)
-                            np.save(os.path.join(self._feat_dir + '_spec', '{}.npy'.format(wav_filename.split('.')[0])),
-                                    log_spect)
-                        elif feat_name == '_IV':
-                            _, foa_iv = self._get_foa_intensity_vectors(spect)
-                            np.save(os.path.join(self._feat_dir + '_IV', '{}.npy'.format(wav_filename.split('.')[0])),
-                                    foa_iv)
-                        else:
-                            phase_vector = np.angle(spect[..., 1:] * np.conj(spect[:, :, 0, None]))
-                            if feat_name == '_IPD':
-                                np.save(
-                                    os.path.join(self._feat_dir + '_IPD', '{}.npy'.format(wav_filename.split('.')[0])),
-                                    phase_vector / np.pi)
-                            elif feat_name == '_IPD_Cos':
-                                np.save(os.path.join(self._feat_dir + '_IPD_Cos',
-                                                     '{}.npy'.format(wav_filename.split('.')[0])),
-                                        np.cos(phase_vector))
-                            elif feat_name == 'IPD_Sin':
-                                np.save(os.path.join(self._feat_dir + '_IPD_Sin',
-                                                     '{}.npy'.format(wav_filename.split('.')[0])),
-                                        np.sin(phase_vector))
+        # sample_audio, _ = self._load_audio('E:\\SELD2021\\foa_dev\\dev-train\\fold1_room1_mix001.wav')
+        sample_audio, _ = self._load_audio(os.path.join(self._aud_dir, os.listdir(self._aud_dir)[0], os.listdir(
+            os.path.join(self._aud_dir, os.listdir(self._aud_dir)[0]))[0]))
+        sample_file = np.squeeze(sample_audio[:, 0])
+        torch.cuda.empty_cache()
+        Twx, Wx, ssq_freqs, scales = ssq_cwt(sample_file, wavelet='morlet', nv=nv_num, fs=self._fs, vectorized=False)
+        ssq_freqs = ssq_freqs[::-1]
+        weights = self.get_costume_mel_band(sr=self._fs, freqs=ssq_freqs, n_mels=self._nb_mel_bins)
+        # weights represent the Mel_filter_bank suitable for the cwt
+        print('weights represent the Mel_filter_bank suitable for the cwt')
 
+        self._feat_dir = self.get_unnormalized_feat_dir()
+        self._feat_dir_norm = self.get_normalized_feat_dir()
+        for feat_name in ['_CWT_abs', '_SSQ_abs', '_CWT_IPD', '_SSQ_IPD', '_CWT_IPD_Cos', '_SSQ_IPD_Cos',
+                          '_CWT_IPD_Sin', '_SSQ_IPD_Sin']:
+            if feat_name in self._feature_list:
+                create_folder(self._feat_dir + '_mel' + feat_name)
+                for scaler_type in self._scaler_type:
+                    create_folder(self._feat_dir_norm + '_mel_' + scaler_type + feat_name)
+                    feat_wts = self.get_normalized_wts_file() + '_mel_' + scaler_type + feat_name
+                    if self._is_eval:
+                        feat_scaler = joblib.load(feat_wts)
+                        for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
+                            if self._quick_test:
+                                if file_cnt > 1:
+                                    break
+                            temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
+                            mel_feat = np.zeros((self._max_feat_frames, self._nb_mel_bins, temp_feat.shape[-1]))
+                            if temp_feat.shape[0] < self._max_feat_frames:
+                                temp_feat = self.costume_padding(temp_feat, self._max_feat_frames)
+                            for ch in range(temp_feat.shape[-1]):
+                                mel_feat[:, :, ch] = np.dot(np.squeeze(temp_feat[:, :, ch]), weights[:,
+                                                                                             ::-1].T)  # We change
+                                # the order of
+                                # weights so the high frequencies get represented the same way as spectrogram. Also,
+                                # if we don't do this, the weights get multiplied by the wrong frequency since scales
+                                # in CWT and frequency are reverse
 
+                            print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
+                            np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+                            del temp_feat
+                            del mel_feat
+                    else:
+                        feat_scaler = preprocessing.MinMaxScaler() if scaler_type == 'minmax' else preprocessing.StandardScaler()
+                        for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
+                            if self._quick_test:
+                                if file_cnt > 1:
+                                    break
+                            if os.path.exists(os.path.join(self._feat_dir + '_mel' + feat_name, file_name)):
+                                mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
+                            else:
+                                temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
+                                mel_feat = np.zeros((self._max_feat_frames, self._nb_mel_bins, temp_feat.shape[-1]))
+                                if temp_feat.shape[0] < self._max_feat_frames:
+                                    temp_feat = self.costume_padding(temp_feat, self._max_feat_frames)
+                                for ch in range(temp_feat.shape[-1]):
+                                    mel_feat[:, :, ch] = np.dot(np.squeeze(temp_feat[:, :, ch]), weights[:,
+                                                                                                 ::-1].T)  # We
+                                    # change the order of weights so the high frequencies get represented the same
+                                    # way as spectrogram. Also, if we don't do this, the weights get multiplied by
+                                    # the wrong frequency since scales in CWT and frequency are reverse
+                                print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
+                                np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+                                del temp_feat
+                            feat_scaler.partial_fit(
+                                mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1))
+                            del mel_feat
+                        joblib.dump(feat_scaler, feat_wts)
 
+                    for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + '_mel' + feat_name)):
+                        if self._quick_test:
+                            if file_cnt > 1:
+                                break
+                        print('{}: {}-{}'.format(file_cnt, feat_name, file_name))
+                        mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
 
+                        mel_feat_norm = feat_scaler.transform(
+                            mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+                            self._max_feat_frames,
+                            mel_feat.shape[-1],
+                            -1).transpose(
+                            (0, 2, 1))
+                        np.save(os.path.join(self._feat_dir_norm + '_mel_' + scaler_type + feat_name, file_name),
+                                mel_feat_norm)
 
+                        del mel_feat
+                        del mel_feat_norm
+
+    def extract_mel_for_scatter(self):
+        # This should be analysed more thoroughly. Also, for the second order
+        if not self._is_mel:
+            print('You have not asked for Mel features')
+            return 0
+        scatter_freqs_ord1 = self._fs * self._meta['xi'][self._meta['order'] == 1, 0]
+        scatter_freqs_ord2 = self._fs * self._meta['xi'][self._meta['order'] == 2, 0]
+        weights1 = self.get_costume_mel_band(sr=self._fs, freqs=scatter_freqs_ord1, n_mels=self._nb_mel_bins)
+        weights2 = self.get_costume_mel_band(sr=self._fs, freqs=scatter_freqs_ord2, n_mels=self._nb_mel_bins)
+        self._feat_dir = self.get_unnormalized_feat_dir()
+        self._feat_dir_norm = self.get_normalized_feat_dir()
+        for feat_name in [f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_1', f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_2', f'_scatter_wavelet_Q{self._scatter_wavelet_Q}']:
+            if feat_name in self._feature_list:
+                indices = self._order1_indices if 'order_1' in feat_name else self._order2_indices if 'order_2' in feat_name else self._order21_indices
+                weights = weights1 if 'order_1' in feat_name else weights2 if 'order_2' in feat_name else np.concatenate(
+                    (weights1, weights2), axis=-1)
+                create_folder(self._feat_dir + '_mel' + feat_name)
+                for scaler_type in self._scaler_type:
+                    create_folder(self._feat_dir_norm + '_mel_' + scaler_type + feat_name)
+                    feat_wts = self.get_normalized_wts_file() + '_mel_' + scaler_type + feat_name
+                    if self._is_eval:
+                        feat_scaler = joblib.load(feat_wts)
+                        for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}')):
+                            if self._quick_test:
+                                if file_cnt > 1:
+                                    break
+                            # temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
+                            temp_feat = librosa.power_to_db(np.load(
+                                os.path.join(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}', file_name)).T)[:, indices, :]
+                            mel_feat = np.zeros((self._max_feat_frames, self._nb_mel_bins, temp_feat.shape[-1]))
+                            if temp_feat.shape[0] < self._max_feat_frames:
+                                temp_feat = self.costume_padding(temp_feat, self._max_feat_frames)
+
+                            for ch in range(temp_feat.shape[-1]):
+                                mel_feat[:, :, ch] = np.dot(np.squeeze(temp_feat[:, :, ch]), weights[:, ::-1].T)
+
+                            print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
+                            np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+
+                            del temp_feat
+                            del mel_feat
+                    else:
+                        feat_scaler = preprocessing.MinMaxScaler() if scaler_type == 'minmax' else preprocessing.StandardScaler()
+                        for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}')):
+                            if self._quick_test:
+                                if file_cnt > 1:
+                                    break
+                            if os.path.exists(os.path.join(self._feat_dir + '_mel' + feat_name, file_name)):
+                                mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
+                            else:
+                                # temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
+                                temp_feat = librosa.power_to_db(
+                                    np.load(os.path.join(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}', file_name)).T)[:, indices, :]
+                                mel_feat = np.zeros((self._max_feat_frames, self._nb_mel_bins, temp_feat.shape[-1]))
+                                if temp_feat.shape[0] < self._max_feat_frames:
+                                    temp_feat = self.costume_padding(temp_feat, self._max_feat_frames)
+
+                                for ch in range(temp_feat.shape[-1]):
+                                    mel_feat[:, :, ch] = np.dot(np.squeeze(temp_feat[:, :, ch]), weights[:, ::-1].T)
+
+                                print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
+                                np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+                                del temp_feat
+                            feat_scaler.partial_fit(
+                                mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1))
+                            del mel_feat
+                        joblib.dump(feat_scaler, feat_wts)
+
+                    for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + '_mel' + feat_name)):
+                        if self._quick_test:
+                            if file_cnt > 1:
+                                break
+                        print('{}: {}-{}'.format(file_cnt, feat_name, file_name))
+                        mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
+
+                        mel_feat_norm = feat_scaler.transform(
+                            mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+                            self._max_feat_frames,
+                            mel_feat.shape[-1],
+                            -1).transpose(
+                            (0, 2, 1))
+                        np.save(os.path.join(self._feat_dir_norm + '_mel_' + scaler_type + feat_name, file_name),
+                                mel_feat_norm)
+
+                        del mel_feat
+                        del mel_feat_norm
 
     # ------------------------------- EXTRACT LABELS AND PREPROCESS IT -------------------------------
     def extract_all_labels(self):
@@ -872,6 +1091,49 @@ class FeatureClass:
                     r = np.sqrt(x ** 2 + y ** 2 + z ** 2)
                     out_dict[frame_cnt].append([tmp_val[0], azimuth, elevation, tmp_val[-1]])
         return out_dict
+
+    # ---------------------- Misc public functions by Masoud Mohtadifar--------------------
+
+    def save_feature_plot(self, indice=None):
+        self._feat_dir = self.get_unnormalized_feat_dir()
+        self._feat_dir_norm = self.get_normalized_feat_dir()
+        if indice==None:
+            rand_indice = np.random.randint(len(os.listdir(self._feat_dir + self._feature_list[0])))
+            rand_name = os.listdir(self._feat_dir + self._feature_list[0])[rand_indice]
+        else:
+            rand_name = os.listdir(self._feat_dir + self._feature_list[0])[indice]
+        for feat_name in self._feature_list:
+            for scaler_type in self._scaler_type:
+                feat = np.load(os.path.join(self._feat_dir_norm + '_' + scaler_type + feat_name, rand_name))
+                if feat.shape[1] > feat.shape[-1]:
+                    plt.imshow(feat.transpose(0, 2, 1).reshape(feat.shape[0], -1).T, aspect='auto')
+                elif feat.shape[1] < feat.shape[-1]:
+                    plt.imshow(feat.reshape(feat.shape[0], -1).T, aspect='auto')
+                plt.xlabel('Time axis')
+                plt.ylabel('Frequency axis(channels concatenated)')
+                plt.savefig(os.path.join(self._feat_label_dir, '{}_norm'.format(
+                    self._dataset_combination) + '_' + scaler_type + feat_name + rand_name.replace('.npy', '.jpg')),
+                            dpi=300, bbox_inches="tight")
+                print(f"the shape of the feature {'norm_' + scaler_type + feat_name} is={feat.shape}")
+
+        if self._is_mel:
+            for feat_name in self._feature_list:
+                for scaler_type in self._scaler_type:
+                    feat = np.load(os.path.join(self._feat_dir_norm + '_mel_' + scaler_type + feat_name, rand_name))
+                    if feat.shape[1] > feat.shape[-1]:
+                        plt.imshow(feat.transpose(0, 2, 1).reshape(feat.shape[0], -1).T, aspect='auto')
+                    elif feat.shape[1] < feat.shape[-1]:
+                        plt.imshow(feat.reshape(feat.shape[0], -1).T, aspect='auto')
+                    plt.xlabel('Time axis')
+                    plt.ylabel('Frequency axis(channels concatenated)')
+                    plt.savefig(os.path.join(self._feat_label_dir, '{}_norm'.format(
+                        self._dataset_combination) + '_mel_' + scaler_type + feat_name + rand_name.replace('.npy',
+                                                                                                           '.jpg')),
+                                dpi=300, bbox_inches="tight")
+                    print(f"the shape of the feature {'norm_mel_' + scaler_type + feat_name} is={feat.shape}")
+
+
+
 
     # ------------------------------- Misc public functions -------------------------------
     def get_classes(self):

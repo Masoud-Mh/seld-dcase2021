@@ -1,5 +1,6 @@
 #
-# Data generator for training the SELDnet
+# Data generator for training the SELDnet. Here we add some extra features such as online data augmentation. also
+# make the code compatible with the customized clc_feature_class with added features
 #
 
 import os
