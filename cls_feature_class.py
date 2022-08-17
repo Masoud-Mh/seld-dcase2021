@@ -422,7 +422,7 @@ class FeatureClass:
                                                      '{}.npy'.format(wav_filename.split('.')[0])),
                                         np.sin(phase_vector))
 
-    def preprocess_spec_etc(self):
+    def preprocess_spec_etc(self, is_remove=False):
         self._feat_dir = self.get_unnormalized_feat_dir()
         self._feat_dir_norm = self.get_normalized_feat_dir()
         for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', '_IPD_Sin']:
@@ -456,6 +456,10 @@ class FeatureClass:
                         np.save(os.path.join(self._feat_dir_norm + '_' + scaler_type + feat_name, file_name), feat_scl)
                         del feat
                         del feat_scl
+        if is_remove:
+            for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', '_IPD_Sin']:
+                if feat_name in self._feature_list:
+                    shutil.rmtree(self._feat_dir + feat_name)
 
     def extract_scatter_wavelet(self):
         # here we extract scatter wavelet. in processing stage we process different orders per our need. also,
@@ -492,10 +496,12 @@ class FeatureClass:
                 print('\t{}: {}, {}'.format(file_cnt, file_name, Sx.shape) + f'done in {time() - t0}')
                 np.save(os.path.join(self._feat_dir, '{}.npy'.format(wav_filename.split('.')[0])), Sx.cpu())
 
-    def preprocess_scatter_wavelet(self):
+    def preprocess_scatter_wavelet(self, is_remove=False):
         self._feat_dir = self.get_unnormalized_feat_dir() + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}'
         self._feat_dir_norm = self.get_normalized_feat_dir()  # + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}'
-        for feat_name in [f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_1', f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_2', f'_scatter_wavelet_Q{self._scatter_wavelet_Q}']:
+        for feat_name in [f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_1',
+                          f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_2',
+                          f'_scatter_wavelet_Q{self._scatter_wavelet_Q}']:
             if feat_name in self._feature_list:
                 indicess = self._order1_indices if 'order_1' in feat_name else self._order2_indices if 'order_2' in feat_name else self._order21_indices
                 for scaler_type in self._scaler_type:
@@ -528,6 +534,8 @@ class FeatureClass:
                         np.save(os.path.join(self._feat_dir_norm + '_' + scaler_type + feat_name, file_name), feat_scl)
                         del feat
                         del feat_scl
+        if is_remove:
+            shutil.rmtree(self._feat_dir)
 
         create_folder(self._feat_dir + '_order_0')
         print('Saving order zero scatter wavelet in case they come in handy for later use')
@@ -573,7 +581,8 @@ class FeatureClass:
                 for ch in range(self._nb_channels):
                     x = np.squeeze(audio_file[:, ch])
                     t0 = time()
-                    Twx[ch, :, :], Wx[ch, :, :], *_ = ssq_cwt(x, wavelet='morlet', nv=nv_num, fs=self._fs, vectorized=False)
+                    Twx[ch, :, :], Wx[ch, :, :], *_ = ssq_cwt(x, wavelet='morlet', nv=nv_num, fs=self._fs,
+                                                              vectorized=False)
                     # Note: the format of time and frequency axis are different from the rest
                     print(f'past time for one channel {time() - t0}')
                     torch.cuda.empty_cache()
@@ -625,7 +634,7 @@ class FeatureClass:
                 del Twx
                 del Wx
 
-    def preprocess_cwt_ssq(self):
+    def preprocess_cwt_ssq(self, is_remove=False):
         self._feat_dir = self.get_unnormalized_feat_dir()
         self._feat_dir_norm = self.get_normalized_feat_dir()
         for feat_name in ['_CWT_abs', '_SSQ_abs', '_CWT_IPD', '_SSQ_IPD', '_CWT_IPD_Cos', '_SSQ_IPD_Cos',
@@ -661,8 +670,13 @@ class FeatureClass:
 
                         del feat
                         del feat_std
+        if is_remove:
+            for feat_name in ['_CWT_abs', '_SSQ_abs', '_CWT_IPD', '_SSQ_IPD', '_CWT_IPD_Cos', '_SSQ_IPD_Cos',
+                              '_CWT_IPD_Sin', '_SSQ_IPD_Sin']:
+                if feat_name in self._feature_list:
+                    shutil.rmtree(self._feat_dir + feat_name)
 
-    def extract_norm_mel_for_spec_etc(self):
+    def extract_norm_mel_for_spec_etc(self, is_remove=False):
         # Here we extract the Mel bands of spectrogram, IPD, and IV and standardize them. you have to extract non mel
         # features first and then run this function if self._feature_list != ['_spec', '_IPD', '_IPD_Cos',
         # '_IPD_Sin', '_IV']: raise ValueError("Wrong feature list")
@@ -739,8 +753,12 @@ class FeatureClass:
 
                         del mel_feat
                         del mel_feat_norm
+        if is_remove:
+            for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', '_IPD_Sin']:
+                if feat_name in self._feature_list:
+                    shutil.rmtree(self._feat_dir + feat_name)
 
-    def extract_mel_for_cwt(self, nv_num=8):
+    def extract_mel_for_cwt(self, nv_num=8, is_remove=False):
         if not self._is_mel:
             print('You have not asked for Mel features')
             return 0
@@ -836,8 +854,13 @@ class FeatureClass:
 
                         del mel_feat
                         del mel_feat_norm
+        if is_remove:
+            for feat_name in ['_CWT_abs', '_SSQ_abs', '_CWT_IPD', '_SSQ_IPD', '_CWT_IPD_Cos', '_SSQ_IPD_Cos',
+                              '_CWT_IPD_Sin', '_SSQ_IPD_Sin']:
+                if feat_name in self._feature_list:
+                    shutil.rmtree(self._feat_dir + feat_name)
 
-    def extract_mel_for_scatter(self):
+    def extract_mel_for_scatter(self, is_remove=False):
         # This should be analysed more thoroughly. Also, for the second order
         if not self._is_mel:
             print('You have not asked for Mel features')
@@ -848,7 +871,9 @@ class FeatureClass:
         weights2 = self.get_costume_mel_band(sr=self._fs, freqs=scatter_freqs_ord2, n_mels=self._nb_mel_bins)
         self._feat_dir = self.get_unnormalized_feat_dir()
         self._feat_dir_norm = self.get_normalized_feat_dir()
-        for feat_name in [f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_1', f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_2', f'_scatter_wavelet_Q{self._scatter_wavelet_Q}']:
+        for feat_name in [f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_1',
+                          f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_2',
+                          f'_scatter_wavelet_Q{self._scatter_wavelet_Q}']:
             if feat_name in self._feature_list:
                 indices = self._order1_indices if 'order_1' in feat_name else self._order2_indices if 'order_2' in feat_name else self._order21_indices
                 weights = weights1 if 'order_1' in feat_name else weights2 if 'order_2' in feat_name else np.concatenate(
@@ -859,13 +884,15 @@ class FeatureClass:
                     feat_wts = self.get_normalized_wts_file() + '_mel_' + scaler_type + feat_name
                     if self._is_eval:
                         feat_scaler = joblib.load(feat_wts)
-                        for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}')):
+                        for file_cnt, file_name in enumerate(
+                                os.listdir(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}')):
                             if self._quick_test:
                                 if file_cnt > 1:
                                     break
                             # temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
                             temp_feat = librosa.power_to_db(np.load(
-                                os.path.join(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}', file_name)).T)[:, indices, :]
+                                os.path.join(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}',
+                                             file_name)).T)[:, indices, :]
                             mel_feat = np.zeros((self._max_feat_frames, self._nb_mel_bins, temp_feat.shape[-1]))
                             if temp_feat.shape[0] < self._max_feat_frames:
                                 temp_feat = self.costume_padding(temp_feat, self._max_feat_frames)
@@ -880,7 +907,8 @@ class FeatureClass:
                             del mel_feat
                     else:
                         feat_scaler = preprocessing.MinMaxScaler() if scaler_type == 'minmax' else preprocessing.StandardScaler()
-                        for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}')):
+                        for file_cnt, file_name in enumerate(
+                                os.listdir(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}')):
                             if self._quick_test:
                                 if file_cnt > 1:
                                     break
@@ -889,7 +917,9 @@ class FeatureClass:
                             else:
                                 # temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
                                 temp_feat = librosa.power_to_db(
-                                    np.load(os.path.join(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}', file_name)).T)[:, indices, :]
+                                    np.load(
+                                        os.path.join(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}',
+                                                     file_name)).T)[:, indices, :]
                                 mel_feat = np.zeros((self._max_feat_frames, self._nb_mel_bins, temp_feat.shape[-1]))
                                 if temp_feat.shape[0] < self._max_feat_frames:
                                     temp_feat = self.costume_padding(temp_feat, self._max_feat_frames)
@@ -923,6 +953,8 @@ class FeatureClass:
 
                         del mel_feat
                         del mel_feat_norm
+        if is_remove:
+            shutil.rmtree(self._feat_dir + f'_scatter_wavelet_Q{self._scatter_wavelet_Q}')
 
     # ------------------------------- EXTRACT LABELS AND PREPROCESS IT -------------------------------
     def extract_all_labels(self):
@@ -1094,44 +1126,75 @@ class FeatureClass:
 
     # ---------------------- Misc public functions by Masoud Mohtadifar--------------------
 
+    # def save_feature_plot(self, indice=None):
+    #     self._feat_dir = self.get_unnormalized_feat_dir()
+    #     self._feat_dir_norm = self.get_normalized_feat_dir()
+    #     if indice==None:
+    #         rand_indice = np.random.randint(len(os.listdir(self._feat_dir + self._feature_list[0])))
+    #         rand_name = os.listdir(self._feat_dir + self._feature_list[0])[rand_indice]
+    #     else:
+    #         rand_name = os.listdir(self._feat_dir + self._feature_list[0])[indice]
+    #     for feat_name in self._feature_list:
+    #         for scaler_type in self._scaler_type:
+    #             feat = np.load(os.path.join(self._feat_dir_norm + '_' + scaler_type + feat_name, rand_name))
+    #             if feat.shape[1] > feat.shape[-1]:
+    #                 plt.imshow(feat.transpose(0, 2, 1).reshape(feat.shape[0], -1).T, aspect='auto')
+    #             elif feat.shape[1] < feat.shape[-1]:
+    #                 plt.imshow(feat.reshape(feat.shape[0], -1).T, aspect='auto')
+    #             plt.xlabel('Time axis')
+    #             plt.ylabel('Frequency axis(channels concatenated)')
+    #             plt.savefig(os.path.join(self._feat_label_dir, '{}_norm'.format(
+    #                 self._dataset_combination) + '_' + scaler_type + feat_name + rand_name.replace('.npy', '.jpg')),
+    #                         dpi=300, bbox_inches="tight")
+    #             print(f"the shape of the feature {'norm_' + scaler_type + feat_name} is={feat.shape}")
+    #
+    #     if self._is_mel:
+    #         for feat_name in self._feature_list:
+    #             for scaler_type in self._scaler_type:
+    #                 feat = np.load(os.path.join(self._feat_dir_norm + '_mel_' + scaler_type + feat_name, rand_name))
+    #                 if feat.shape[1] > feat.shape[-1]:
+    #                     plt.imshow(feat.transpose(0, 2, 1).reshape(feat.shape[0], -1).T, aspect='auto')
+    #                 elif feat.shape[1] < feat.shape[-1]:
+    #                     plt.imshow(feat.reshape(feat.shape[0], -1).T, aspect='auto')
+    #                 plt.xlabel('Time axis')
+    #                 plt.ylabel('Frequency axis(channels concatenated)')
+    #                 plt.savefig(os.path.join(self._feat_label_dir, '{}_norm'.format(
+    #                     self._dataset_combination) + '_mel_' + scaler_type + feat_name + rand_name.replace('.npy',
+    #                                                                                                        '.jpg')),
+    #                             dpi=300, bbox_inches="tight")
+    #                 print(f"the shape of the feature {'norm_mel_' + scaler_type + feat_name} is={feat.shape}")
+
     def save_feature_plot(self, indice=None):
         self._feat_dir = self.get_unnormalized_feat_dir()
         self._feat_dir_norm = self.get_normalized_feat_dir()
-        if indice==None:
-            rand_indice = np.random.randint(len(os.listdir(self._feat_dir + self._feature_list[0])))
-            rand_name = os.listdir(self._feat_dir + self._feature_list[0])[rand_indice]
+        temp_dirs = os.listdir(self._feat_label_dir)
+        if indice == None:
+            for i in range(len(temp_dirs)):
+                if os.path.isdir(os.path.join(self._feat_label_dir, temp_dirs[i])) and ('label' not in temp_dirs[i]):
+                    rand_indice = np.random.randint(len(os.listdir(os.path.join(self._feat_label_dir + temp_dirs[i]))))
+                    # rand_name = os.listdir(self._feat_dir + self._feature_list[0])[rand_indice]
+                    rand_name = os.listdir(os.path.join(self._feat_label_dir, temp_dirs[i]))[rand_indice]
+                    break
         else:
-            rand_name = os.listdir(self._feat_dir + self._feature_list[0])[indice]
-        for feat_name in self._feature_list:
-            for scaler_type in self._scaler_type:
-                feat = np.load(os.path.join(self._feat_dir_norm + '_' + scaler_type + feat_name, rand_name))
+            for i in range(len(temp_dirs)):
+                if os.path.isdir(os.path.join(self._feat_label_dir, temp_dirs[i])) and ('label' not in temp_dirs[i]):
+                    # rand_indice = np.random.randint(len(os.listdir(os.path.join(self._label_dir + temp_dirs[i]))))
+                    # rand_name = os.listdir(self._feat_dir + self._feature_list[0])[rand_indice]
+                    rand_name = os.listdir(os.path.join(self._feat_label_dir, temp_dirs[i]))[indice]
+                    break
+            # rand_name = os.listdir(self._feat_dir + self._feature_list[0])[indice]
+        for i in range(len(temp_dirs)):
+            if os.path.isdir(os.path.join(self._feat_label_dir, temp_dirs[i])) and ('label' not in temp_dirs[i]):
+                feat = np.load(os.path.join(self._feat_label_dir, temp_dirs[i], rand_name))
                 if feat.shape[1] > feat.shape[-1]:
                     plt.imshow(feat.transpose(0, 2, 1).reshape(feat.shape[0], -1).T, aspect='auto')
                 elif feat.shape[1] < feat.shape[-1]:
                     plt.imshow(feat.reshape(feat.shape[0], -1).T, aspect='auto')
                 plt.xlabel('Time axis')
                 plt.ylabel('Frequency axis(channels concatenated)')
-                plt.savefig(os.path.join(self._feat_label_dir, '{}_norm'.format(
-                    self._dataset_combination) + '_' + scaler_type + feat_name + rand_name.replace('.npy', '.jpg')),
+                plt.savefig(os.path.join(self._feat_label_dir, temp_dirs[i], rand_name.replace('.npy', '.jpg')),
                             dpi=300, bbox_inches="tight")
-                print(f"the shape of the feature {'norm_' + scaler_type + feat_name} is={feat.shape}")
-
-        if self._is_mel:
-            for feat_name in self._feature_list:
-                for scaler_type in self._scaler_type:
-                    feat = np.load(os.path.join(self._feat_dir_norm + '_mel_' + scaler_type + feat_name, rand_name))
-                    if feat.shape[1] > feat.shape[-1]:
-                        plt.imshow(feat.transpose(0, 2, 1).reshape(feat.shape[0], -1).T, aspect='auto')
-                    elif feat.shape[1] < feat.shape[-1]:
-                        plt.imshow(feat.reshape(feat.shape[0], -1).T, aspect='auto')
-                    plt.xlabel('Time axis')
-                    plt.ylabel('Frequency axis(channels concatenated)')
-                    plt.savefig(os.path.join(self._feat_label_dir, '{}_norm'.format(
-                        self._dataset_combination) + '_mel_' + scaler_type + feat_name + rand_name.replace('.npy',
-                                                                                                           '.jpg')),
-                                dpi=300, bbox_inches="tight")
-                    print(f"the shape of the feature {'norm_mel_' + scaler_type + feat_name} is={feat.shape}")
-
+                print(f"the shape of the feature {temp_dirs[i]} is={feat.shape}")
 
 
 

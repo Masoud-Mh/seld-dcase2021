@@ -2,6 +2,7 @@
 #
 # Ideally, do not change the values of the default parameters. Create separate cases with unique <task-id> as seen in
 # the code below (if-else loop) and use them. This way you can easily reproduce a configuration on a later time.
+import datetime
 
 
 def get_params(argv='1'):
@@ -116,11 +117,28 @@ def get_params(argv='1'):
         # Base folder containing the foa_dev/mic_dev and metadata folders
 
         # OUTPUT PATH
-        params['feat_label_dir'] = 'E:\Datasets\SELD2021\seld_feat_label'
+        params['feat_label_dir'] = 'E:\Datasets\SELD2021\seld_feat_label_2'
         # Directory to dump extracted features and labels
 
         # DATASET LOADING PARAMETERS
         params['mode'] = 'eval'  # 'dev' - development or 'eval' - evaluation dataset
+
+    elif argv == '12':
+        params['quick_test'] = False  # If True: Trains/test on small subset of dataset, and # of epochs
+
+        # INPUT PATH
+        params['dataset_dir'] = '/home/ubuntu/DCASE-2021/'
+        # Base folder containing the foa_dev/mic_dev and metadata folders
+
+        # OUTPUT PATH
+        params['feat_label_dir'] = '/home/ubuntu/DCASE-2021'
+        # Directory to dump extracted features and labels
+
+        # DATASET LOADING PARAMETERS
+        params['mode'] = 'eval'  # 'dev' - development or 'eval' - evaluation dataset
+        params['nv_num'] = 32
+        params['model_dir'] = "models/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        params['dcase_output_dir'] = "results/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
     elif argv == '999':
         print("QUICK TEST MODE\n")
