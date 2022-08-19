@@ -127,18 +127,18 @@ def get_params(argv='1'):
         params['quick_test'] = False  # If True: Trains/test on small subset of dataset, and # of epochs
 
         # INPUT PATH
-        params['dataset_dir'] = '/home/ubuntu/DCASE-2021/'
+        params['dataset_dir'] = '/home/ubuntu/DCASE-2021/DATASET'
         # Base folder containing the foa_dev/mic_dev and metadata folders
 
         # OUTPUT PATH
-        params['feat_label_dir'] = '/home/ubuntu/DCASE-2021'
+        params['feat_label_dir'] = '/home/ubuntu/DCASE-2021/features/seld_feat_label'
         # Directory to dump extracted features and labels
 
         # DATASET LOADING PARAMETERS
         params['mode'] = 'eval'  # 'dev' - development or 'eval' - evaluation dataset
         params['nv_num'] = 32
-        params['model_dir'] = "models/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        params['dcase_output_dir'] = "results/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        params['model_dir'] = "/home/ubuntu/DCASE-2021/models/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        params['dcase_output_dir'] = "/home/ubuntu/DCASE-2021/results/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
     elif argv == '999':
         print("QUICK TEST MODE\n")

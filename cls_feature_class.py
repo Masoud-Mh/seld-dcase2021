@@ -586,9 +586,6 @@ class FeatureClass:
                     # Note: the format of time and frequency axis are different from the rest
                     print(f'past time for one channel {time() - t0}')
                     torch.cuda.empty_cache()
-                # for feat_name in ['_CWT_abs', '_SSQ_abs', '_CWT_IPD', '_SSQ_IPD', '_CWT_IPD_Cos', '_SSQ_IPD_Cos',
-                #                   '_CWT_IPD_Sin', '_SSQ_IPD_Sin']:
-
                 # In the saving Process we fix the dimensions, so they match the rest of the features.
                 if '_CWT_abs' in self._feature_list:
                     Wx_abs = librosa.power_to_db(
@@ -602,81 +599,74 @@ class FeatureClass:
                     np.save(os.path.join(self._feat_dir + '_SSQ_abs', '{}.npy'.format(wav_filename.split('.')[0])),
                             Twx_abs.T)
                     del Twx_abs
-                # if '_CWT_IPD' in self._feature_list:
-                #     Wx_IPD = (torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                #         torch.tensor(np.angle(Wx.cpu()[1:, :, :] * np.conj(Wx.cpu()[0, :, :]))))) / np.pi
-                #     np.save(os.path.join(self._feat_dir + '_CWT_IPD', '{}.npy'.format(wav_filename.split('.')[0])),
-                #             Wx_IPD.permute(2, 1, 0))
-                #     del Wx_IPD
-                # if '_SSQ_IPD' in self._feature_list:
-                #     Twx_IPD = (torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                #         torch.tensor(np.angle(Twx.cpu()[1:, :, :] * np.conj(Twx.cpu()[0, :, :]))))) / np.pi
-                #     np.save(os.path.join(self._feat_dir + '_SSQ_IPD', '{}.npy'.format(wav_filename.split('.')[0])),
-                #             Twx_IPD.permute(2, 1, 0))
-                #     del Twx_IPD
-                # if '_CWT_IPD_Cos' in self._feature_list:
-                #     Wx_IPD_Cos = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                #         torch.tensor(np.cos(np.angle(Wx.cpu()[1:, :, :] * np.conj(Wx.cpu()[0, :, :])))))
-                #     np.save(os.path.join(self._feat_dir + '_CWT_IPD_Cos', '{}.npy'.format(wav_filename.split('.')[0])),
-                #             Wx_IPD_Cos.permute(2, 1, 0))
-                #     del Wx_IPD_Cos
-                # if '_SSQ_IPD_Cos' in self._feature_list:
-                #     Twx_IPD_Cos = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                #         torch.tensor(np.cos(np.angle(Twx.cpu()[1:, :, :] * np.conj(Twx.cpu()[0, :, :])))))
-                #     np.save(os.path.join(self._feat_dir + '_SSQ_IPD_Cos', '{}.npy'.format(wav_filename.split('.')[0])),
-                #             Twx_IPD_Cos.permute(2, 1, 0))
-                #     del Twx_IPD_Cos
-                # if '_CWT_IPD_Sin' in self._feature_list:
-                #     Wx_IPD_Sin = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                #         torch.tensor(np.sin(np.angle(Wx.cpu()[1:, :, :] * np.conj(Wx.cpu()[0, :, :])))))
-                #     np.save(os.path.join(self._feat_dir + '_CWT_IPD_Sin', '{}.npy'.format(wav_filename.split('.')[0])),
-                #             Wx_IPD_Sin.permute(2, 1, 0))
-                #     del Wx_IPD_Sin
-                # if '_SSQ_IPD_Sin' in self._feature_list:
-                #     Twx_IPD_Sin = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                #         torch.tensor(np.sin(np.angle(Twx.cpu()[1:, :, :] * np.conj(Twx.cpu()[0, :, :])))))
-                #     np.save(os.path.join(self._feat_dir + '_SSQ_IPD_Sin', '{}.npy'.format(wav_filename.split('.')[0])),
-                #             Twx_IPD_Sin.permute(2, 1, 0))
-                #     del Twx_IPD_Sin
-
                 if '_CWT_IPD' in self._feature_list:
                     Wx_IPD = torch.unsqueeze((torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                                torch.tensor(np.angle(Wx.cpu()[1:, 0, :] * np.conj(Wx.cpu()[0, 0, :]))))) / np.pi, dim=1)
+                        torch.tensor(np.angle(Wx.cpu()[1:, 0, :] * np.conj(Wx.cpu()[0, 0, :]))))) / np.pi, dim=1)
                     for i in range(1, Wx.size(dim=1)):
                         Wx_IPD = torch.concat(
                             (Wx_IPD, torch.unsqueeze((torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                                torch.tensor(np.angle(Wx.cpu()[1:, 0, :] * np.conj(Wx.cpu()[0, 0, :]))))) / np.pi,
+                                torch.tensor(np.angle(Wx.cpu()[1:, i, :] * np.conj(Wx.cpu()[0, i, :]))))) / np.pi,
                                                      dim=1)), dim=1)
                     np.save(os.path.join(self._feat_dir + '_CWT_IPD', '{}.npy'.format(wav_filename.split('.')[0])),
-                                    Wx_IPD.permute(2, 1, 0))
+                            Wx_IPD.permute(2, 1, 0))
                     del Wx_IPD
                 if '_SSQ_IPD' in self._feature_list:
-                    Twx_IPD = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(Twx.cpu())
-                    Twx_IPD = np.angle(Twx_IPD[1:, :, :] * np.conj(Twx_IPD[0, :, :])) / np.pi
+                    Twx_IPD = torch.unsqueeze((torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                        torch.tensor(np.angle(Twx.cpu()[1:, 0, :] * np.conj(Twx.cpu()[0, 0, :]))))) / np.pi, dim=1)
+                    for i in range(1, Twx.size(dim=1)):
+                        Twx_IPD = torch.concat(
+                            (Twx_IPD, torch.unsqueeze((torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                                torch.tensor(np.angle(Twx.cpu()[1:, i, :] * np.conj(Twx.cpu
+                                                                                    ()[0, i, :]))))) / np.pi,
+                                                      dim=1)), dim=1)
                     np.save(os.path.join(self._feat_dir + '_SSQ_IPD', '{}.npy'.format(wav_filename.split('.')[0])),
                             Twx_IPD.permute(2, 1, 0))
                     del Twx_IPD
                 if '_CWT_IPD_Cos' in self._feature_list:
-                    Wx_IPD_Cos = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                        torch.tensor(np.cos(np.angle(Wx.cpu()[1:, :, :] * np.conj(Wx.cpu()[0, :, :])))))
+                    Wx_IPD_Cos = torch.unsqueeze(torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                        torch.tensor(np.cos(np.angle(Wx.cpu()[1:, 0, :] * np.conj(Wx.cpu()[0, 0, :]))))), dim=1)
+                    for i in range(1, Wx.size(dim=1)):
+                        Wx_IPD_Cos = torch.concat(
+                            (Wx_IPD_Cos, torch.unsqueeze((torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                                torch.tensor(
+                                    np.cos(np.angle(Wx.cpu()[1:, i, :] * np.conj(Wx.cpu()[0, i, :])))))),
+                                                         dim=1)), dim=1)
                     np.save(os.path.join(self._feat_dir + '_CWT_IPD_Cos', '{}.npy'.format(wav_filename.split('.')[0])),
                             Wx_IPD_Cos.permute(2, 1, 0))
                     del Wx_IPD_Cos
                 if '_SSQ_IPD_Cos' in self._feature_list:
-                    Twx_IPD_Cos = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                        torch.tensor(np.cos(np.angle(Twx.cpu()[1:, :, :] * np.conj(Twx.cpu()[0, :, :])))))
+                    Twx_IPD_Cos = torch.unsqueeze(torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                        torch.tensor(np.cos(np.angle(Twx.cpu()[1:, 0, :] * np.conj(Twx.cpu()[0, 0, :]))))), dim=1)
+                    for i in range(1, Twx.size(dim=1)):
+                        Twx_IPD_Cos = torch.concat(
+                            (Twx_IPD_Cos, torch.unsqueeze((torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                                torch.tensor(
+                                    np.cos(np.angle(Twx.cpu()[1:, i, :] * np.conj(Twx.cpu()[0, i, :])))))),
+                                                          dim=1)), dim=1)
                     np.save(os.path.join(self._feat_dir + '_SSQ_IPD_Cos', '{}.npy'.format(wav_filename.split('.')[0])),
                             Twx_IPD_Cos.permute(2, 1, 0))
                     del Twx_IPD_Cos
                 if '_CWT_IPD_Sin' in self._feature_list:
-                    Wx_IPD_Sin = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                        torch.tensor(np.sin(np.angle(Wx.cpu()[1:, :, :] * np.conj(Wx.cpu()[0, :, :])))))
+                    Wx_IPD_Sin = torch.unsqueeze(torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                        torch.tensor(np.sin(np.angle(Wx.cpu()[1:, 0, :] * np.conj(Wx.cpu()[0, 0, :]))))), dim=1)
+                    for i in range(1, Wx.size(dim=1)):
+                        Wx_IPD_Sin = torch.concat(
+                            (Wx_IPD_Sin, torch.unsqueeze((torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                                torch.tensor(
+                                    np.sin(np.angle(Wx.cpu()[1:, i, :] * np.conj(Wx.cpu()[0, i, :])))))),
+                                                         dim=1)), dim=1)
                     np.save(os.path.join(self._feat_dir + '_CWT_IPD_Sin', '{}.npy'.format(wav_filename.split('.')[0])),
                             Wx_IPD_Sin.permute(2, 1, 0))
                     del Wx_IPD_Sin
                 if '_SSQ_IPD_Sin' in self._feature_list:
-                    Twx_IPD_Sin = torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
-                        torch.tensor(np.sin(np.angle(Twx.cpu()[1:, :, :] * np.conj(Twx.cpu()[0, :, :])))))
+                    Twx_IPD_Sin = torch.unsqueeze(torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                        torch.tensor(np.sin(np.angle(Twx.cpu()[1:, 0, :] * np.conj(Twx.cpu()[0, 0, :]))))), dim=1)
+                    for i in range(1, Twx.size(dim=1)):
+                        Twx_IPD_Sin = torch.concat(
+                            (Twx_IPD_Sin, torch.unsqueeze((torch.nn.AvgPool1d(self._hop_len, stride=self._hop_len)(
+                                torch.tensor(
+                                    np.sin(np.angle(Twx.cpu()[1:, i, :] * np.conj(Twx.cpu()[0, i, :])))))),
+                                                          dim=1)), dim=1)
                     np.save(os.path.join(self._feat_dir + '_SSQ_IPD_Sin', '{}.npy'.format(wav_filename.split('.')[0])),
                             Twx_IPD_Sin.permute(2, 1, 0))
                     del Twx_IPD_Sin
@@ -1242,11 +1232,9 @@ class FeatureClass:
                     plt.imshow(feat.reshape(feat.shape[0], -1).T, aspect='auto')
                 plt.xlabel('Time axis')
                 plt.ylabel('Frequency axis(channels concatenated)')
-                plt.savefig(os.path.join(self._feat_label_dir, temp_dirs[i], rand_name.replace('.npy', '.jpg')),
+                plt.savefig(os.path.join(self._feat_label_dir, temp_dirs[i] + rand_name.replace('.npy', '.jpg')),
                             dpi=300, bbox_inches="tight")
                 print(f"the shape of the feature {temp_dirs[i]} is={feat.shape}")
-
-
 
     # ------------------------------- Misc public functions -------------------------------
     def get_classes(self):
