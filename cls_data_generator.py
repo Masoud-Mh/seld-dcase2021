@@ -10,6 +10,46 @@ from IPython import embed
 from collections import deque
 import random
 
+import torch
+
+
+def costume_padding(arr, pad_size):
+    # tweaking to fit IPD, since IPD has 513 features and first order has 512
+    diff = pad_size - arr.shape[0]
+    ol_shape = list(arr.shape)
+    ol_shape[0] = pad_size
+    # ol_shape[1] = ol_shape[1] + 1
+    out = np.zeros(ol_shape)
+    # indices = [i for i in range(pad_size) if i % (pad_size // diff) == pad_size // diff - 1]
+    indices = [i for i in range(pad_size // diff * diff) if i % (pad_size // diff) == pad_size // diff - 1]
+    # ex_indices = [i for i in range(pad_size) if i % (pad_size // diff) != pad_size // diff - 1]
+    ex_indices = [i for i in range(pad_size) if i not in indices]
+    # out[indices, :, :] = 0
+    # out[ex_indices, 1:, :] = arr
+    out[ex_indices, :, :] = arr
+    for i in indices:
+        if i < pad_size - 1:
+            # out[i, 1:, :] = (out[i + 1, 1:, :] + out[i - 1, 1:, :]) / 2
+            out[i, :, :] = (out[i + 1, :, :] + out[i - 1, :, :]) / 2
+    return out
+
+
+def costume_downsampling(arr, pad_size):
+    # tweaking to fit IPD, since IPD has 513 features and first order has 512
+    diff = arr.shape[1] - arr.shape[1] // pad_size * pad_size
+    ol_shape = list(arr.shape)
+    ol_shape[1] = pad_size
+    out = np.zeros(ol_shape)
+    # indices = [i for i in range(pad_size) if i % (pad_size // diff) == pad_size // diff - 1]
+    indices = [i + diff // 2 for i in range(arr.shape[1] // diff * diff) if
+               i % (arr.shape[1] // diff) == arr.shape[1] // diff - 1]
+    # ex_indices = [i for i in range(pad_size) if i % (pad_size // diff) != pad_size // diff - 1]
+    ex_indices = [i for i in range(arr.shape[1]) if i not in indices]
+    # out[indices, :, :] = 0
+    out = arr[:, ex_indices, :]
+    out = torch.nn.AvgPool2d((arr.shape[1] // pad_size, 1), stride=(arr.shape[1] // pad_size, 1))(torch.tensor(out))
+    return out
+
 
 class DataGenerator(object):
     def __init__(
@@ -19,6 +59,9 @@ class DataGenerator(object):
         self._is_eval = is_eval
         self._splits = np.array(split)
         self._batch_size = params['batch_size']
+
+        self._scatter_wavelet_Q = params['scatter_wavelet_Q']
+
         self._feature_seq_len = params['feature_sequence_length']
         self._label_seq_len = params['label_sequence_length']
         self._is_accdoa = params['is_accdoa']
@@ -28,18 +71,21 @@ class DataGenerator(object):
         self._label_dir = self._feat_cls.get_label_dir()
         self._feat_dir = self._feat_cls.get_normalized_feat_dir()
 
+        self._feat_list = params['feature_list']
+        self._is_mel = params['is_mel']
+
         self._filenames_list = list()
-        self._nb_frames_file = 0     # Using a fixed number of frames in feat files. Updated in _get_label_filenames_sizes()
+        self._nb_frames_file = 0  # Using a fixed number of frames in feat files. Updated in _get_label_filenames_sizes()
         self._nb_mel_bins = self._feat_cls.get_nb_mel_bins()
         self._nb_ch = None
         self._label_len = None  # total length of label - DOA + SED
-        self._doa_len = None    # DOA label length
+        self._doa_len = None  # DOA label length
         self._class_dict = self._feat_cls.get_classes()
         self._nb_classes = self._feat_cls.get_nb_classes()
         self._get_filenames_list_and_feat_label_sizes()
 
-        self._feature_batch_seq_len = self._batch_size*self._feature_seq_len
-        self._label_batch_seq_len = self._batch_size*self._label_seq_len
+        self._feature_batch_seq_len = self._batch_size * self._feature_seq_len
+        self._label_batch_seq_len = self._batch_size * self._label_seq_len
         self._circ_buf_feat = None
         self._circ_buf_label = None
 
@@ -47,16 +93,16 @@ class DataGenerator(object):
             self._nb_total_batches = len(self._filenames_list)
         else:
             self._nb_total_batches = int(np.floor((len(self._filenames_list) * self._nb_frames_file /
-                                               float(self._feature_batch_seq_len))))
+                                                   float(self._feature_batch_seq_len))))
 
         # self._dummy_feat_vec = np.ones(self._feat_len.shape) *
 
         print(
             '\tDatagen_mode: {}, nb_files: {}, nb_classes:{}\n'
             '\tnb_frames_file: {}, feat_len: {}, nb_ch: {}, label_len:{}\n'.format(
-                'eval' if self._is_eval else 'dev', len(self._filenames_list),  self._nb_classes,
+                'eval' if self._is_eval else 'dev', len(self._filenames_list), self._nb_classes,
                 self._nb_frames_file, self._nb_mel_bins, self._nb_ch, self._label_len
-                )
+            )
         )
 
         print(
@@ -73,16 +119,20 @@ class DataGenerator(object):
         )
 
     def get_data_sizes(self):
-        feat_shape = (self._batch_size, self._nb_ch, self._feature_seq_len, self._nb_mel_bins)
+        if self._is_mel:
+            feat_shape = (self._batch_size, self._nb_ch, self._feature_seq_len, self._nb_mel_bins)
+        else:
+            # Can be more general but we usually go and make all the features the same size as our spectrogram
+            feat_shape = (self._batch_size, self._nb_ch, self._feature_seq_len, self._feat_cls._nfft // 2 + 1)
         if self._is_eval:
             label_shape = None
         else:
             if self._is_accdoa:
-                label_shape = (self._batch_size, self._label_seq_len, self._nb_classes*3)
+                label_shape = (self._batch_size, self._label_seq_len, self._nb_classes * 3)
             else:
                 label_shape = [
                     (self._batch_size, self._label_seq_len, self._nb_classes),
-                    (self._batch_size, self._label_seq_len, self._nb_classes*3) 
+                    (self._batch_size, self._label_seq_len, self._nb_classes * 3)
                 ]
         return feat_shape, label_shape
 
@@ -90,12 +140,12 @@ class DataGenerator(object):
         return self._nb_total_batches
 
     def _get_filenames_list_and_feat_label_sizes(self):
-        
+
         for filename in os.listdir(self._feat_dir):
             if self._is_eval:
                 self._filenames_list.append(filename)
             else:
-                if int(filename[4]) in self._splits: # check which split the file belongs to
+                if int(filename[4]) in self._splits:  # check which split the file belongs to
                     self._filenames_list.append(filename)
 
         temp_feat = np.load(os.path.join(self._feat_dir, self._filenames_list[0]))
@@ -105,10 +155,10 @@ class DataGenerator(object):
         if not self._is_eval:
             temp_label = np.load(os.path.join(self._label_dir, self._filenames_list[0]))
             self._label_len = temp_label.shape[-1]
-            self._doa_len = (self._label_len - self._nb_classes)//self._nb_classes
+            self._doa_len = (self._label_len - self._nb_classes) // self._nb_classes
 
         if self._per_file:
-            self._batch_size = int(np.ceil(temp_feat.shape[0]/float(self._feature_seq_len)))
+            self._batch_size = int(np.ceil(temp_feat.shape[0] / float(self._feature_seq_len)))
 
         return
 
@@ -152,7 +202,8 @@ class DataGenerator(object):
                     feat = np.zeros((self._feature_batch_seq_len, self._nb_mel_bins * self._nb_ch))
                     for j in range(self._feature_batch_seq_len):
                         feat[j, :] = self._circ_buf_feat.popleft()
-                    feat = np.reshape(feat, (self._feature_batch_seq_len, self._nb_ch, self._nb_mel_bins)).transpose((0, 2, 1))
+                    feat = np.reshape(feat, (self._feature_batch_seq_len, self._nb_ch, self._nb_mel_bins)).transpose(
+                        (0, 2, 1))
 
                     # Split to sequences
                     feat = self._split_in_seqs(feat, self._feature_seq_len)
@@ -196,7 +247,8 @@ class DataGenerator(object):
                         feat[j, :] = self._circ_buf_feat.popleft()
                     for j in range(self._label_batch_seq_len):
                         label[j, :] = self._circ_buf_label.popleft()
-                    feat = np.reshape(feat, (self._feature_batch_seq_len, self._nb_ch, self._nb_mel_bins)).transpose((0, 2, 1))
+                    feat = np.reshape(feat, (self._feature_batch_seq_len, self._nb_ch, self._nb_mel_bins)).transpose(
+                        (0, 2, 1))
 
                     # Split to sequences
                     feat = self._split_in_seqs(feat, self._feature_seq_len)
@@ -208,10 +260,11 @@ class DataGenerator(object):
                         label = mask * label[:, :, self._nb_classes:]
 
                     else:
-                         label = [
+                        label = [
                             label[:, :, :self._nb_classes],  # SED labels
-                            label[:, :, self._nb_classes:] if self._doa_objective is 'mse' else label # SED + DOA labels
-                             ]
+                            label[:, :, self._nb_classes:] if self._doa_objective is 'mse' else label
+                            # SED + DOA labels
+                        ]
                     yield feat, label
 
     def _split_in_seqs(self, data, _seq_len):
@@ -266,7 +319,7 @@ class DataGenerator(object):
 
     def get_classes(self):
         return self._feat_cls.get_classes()
-    
+
     def get_filelist(self):
         return self._filenames_list
 
@@ -275,7 +328,7 @@ class DataGenerator(object):
 
     def get_nb_frames(self):
         return self._feat_cls.get_nb_frames()
-    
+
     def get_data_gen_mode(self):
         return self._is_eval
 

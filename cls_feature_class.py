@@ -727,10 +727,10 @@ class FeatureClass:
         self._feat_dir_norm = self.get_normalized_feat_dir()
         for feat_name in ['_spec', '_IV', '_IPD', '_IPD_Cos', '_IPD_Sin']:
             if feat_name in self._feature_list:
-                create_folder(self._feat_dir + '_mel' + feat_name)
+                create_folder(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name)
                 for scaler_type in self._scaler_type:
-                    create_folder(self._feat_dir_norm + '_mel_' + scaler_type + feat_name)
-                    feat_wts = self.get_normalized_wts_file() + '_mel_' + scaler_type + feat_name
+                    create_folder(self._feat_dir_norm + f'_mel{self._nb_mel_bins}_' + scaler_type + feat_name)
+                    feat_wts = self.get_normalized_wts_file() + f'_mel{self._nb_mel_bins}_' + scaler_type + feat_name
                     if self._is_eval:
                         feat_scaler = joblib.load(feat_wts)
                         for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
@@ -746,7 +746,7 @@ class FeatureClass:
                                 mel_feat[:, :, ch] = np.dot(np.squeeze(temp_feat[:, :, ch]), self._mel_wts)
 
                             print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
-                            np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+                            np.save(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name), mel_feat)
                             del temp_feat
                             del mel_feat
                     else:
@@ -755,8 +755,8 @@ class FeatureClass:
                             if self._quick_test:
                                 if file_cnt > 1:
                                     break
-                            if os.path.exists(os.path.join(self._feat_dir + '_mel' + feat_name, file_name)):
-                                mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
+                            if os.path.exists(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name)):
+                                mel_feat = np.load(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name))
                             else:
                                 temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
                                 mel_feat = np.zeros((self._max_feat_frames, self._nb_mel_bins, temp_feat.shape[-1]))
@@ -767,7 +767,7 @@ class FeatureClass:
                                     mel_feat[:, :, ch] = np.dot(np.squeeze(temp_feat[:, :, ch]), self._mel_wts)
 
                                 print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
-                                np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+                                np.save(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name), mel_feat)
                                 del temp_feat
 
                             feat_scaler.partial_fit(mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1))
@@ -775,12 +775,12 @@ class FeatureClass:
 
                         joblib.dump(feat_scaler, feat_wts)
 
-                    for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + '_mel' + feat_name)):
+                    for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name)):
                         if self._quick_test:
                             if file_cnt > 1:
                                 break
                         print('{}: {}-{}'.format(file_cnt, feat_name, file_name))
-                        mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
+                        mel_feat = np.load(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name))
 
                         mel_feat_norm = feat_scaler.transform(
                             mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
@@ -788,7 +788,7 @@ class FeatureClass:
                             mel_feat.shape[-1],
                             -1).transpose(
                             (0, 2, 1))
-                        np.save(os.path.join(self._feat_dir_norm + '_mel_' + scaler_type + feat_name, file_name),
+                        np.save(os.path.join(self._feat_dir_norm + f'_mel{self._nb_mel_bins}_' + scaler_type + feat_name, file_name),
                                 mel_feat_norm)
 
                         del mel_feat
@@ -823,10 +823,10 @@ class FeatureClass:
         for feat_name in ['_CWT_abs', '_SSQ_abs', '_CWT_IPD', '_SSQ_IPD', '_CWT_IPD_Cos', '_SSQ_IPD_Cos',
                           '_CWT_IPD_Sin', '_SSQ_IPD_Sin']:
             if feat_name in self._feature_list:
-                create_folder(self._feat_dir + '_mel' + feat_name)
+                create_folder(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name)
                 for scaler_type in self._scaler_type:
-                    create_folder(self._feat_dir_norm + '_mel_' + scaler_type + feat_name)
-                    feat_wts = self.get_normalized_wts_file() + '_mel_' + scaler_type + feat_name
+                    create_folder(self._feat_dir_norm + f'_mel{self._nb_mel_bins}_' + scaler_type + feat_name)
+                    feat_wts = self.get_normalized_wts_file() + f'_mel{self._nb_mel_bins}_' + scaler_type + feat_name
                     if self._is_eval:
                         feat_scaler = joblib.load(feat_wts)
                         for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + feat_name)):
@@ -846,7 +846,7 @@ class FeatureClass:
                                 # in CWT and frequency are reverse
 
                             print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
-                            np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+                            np.save(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name), mel_feat)
                             del temp_feat
                             del mel_feat
                     else:
@@ -855,8 +855,8 @@ class FeatureClass:
                             if self._quick_test:
                                 if file_cnt > 1:
                                     break
-                            if os.path.exists(os.path.join(self._feat_dir + '_mel' + feat_name, file_name)):
-                                mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
+                            if os.path.exists(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name)):
+                                mel_feat = np.load(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name))
                             else:
                                 temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
                                 mel_feat = np.zeros((self._max_feat_frames, self._nb_mel_bins, temp_feat.shape[-1]))
@@ -869,19 +869,19 @@ class FeatureClass:
                                     # way as spectrogram. Also, if we don't do this, the weights get multiplied by
                                     # the wrong frequency since scales in CWT and frequency are reverse
                                 print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
-                                np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+                                np.save(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name), mel_feat)
                                 del temp_feat
                             feat_scaler.partial_fit(
                                 mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1))
                             del mel_feat
                         joblib.dump(feat_scaler, feat_wts)
 
-                    for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + '_mel' + feat_name)):
+                    for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name)):
                         if self._quick_test:
                             if file_cnt > 1:
                                 break
                         print('{}: {}-{}'.format(file_cnt, feat_name, file_name))
-                        mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
+                        mel_feat = np.load(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name))
 
                         mel_feat_norm = feat_scaler.transform(
                             mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
@@ -889,7 +889,7 @@ class FeatureClass:
                             mel_feat.shape[-1],
                             -1).transpose(
                             (0, 2, 1))
-                        np.save(os.path.join(self._feat_dir_norm + '_mel_' + scaler_type + feat_name, file_name),
+                        np.save(os.path.join(self._feat_dir_norm + f'_mel{self._nb_mel_bins}_' + scaler_type + feat_name, file_name),
                                 mel_feat_norm)
 
                         del mel_feat
@@ -918,10 +918,10 @@ class FeatureClass:
                 indices = self._order1_indices if 'order_1' in feat_name else self._order2_indices if 'order_2' in feat_name else self._order21_indices
                 weights = weights1 if 'order_1' in feat_name else weights2 if 'order_2' in feat_name else np.concatenate(
                     (weights1, weights2), axis=-1)
-                create_folder(self._feat_dir + '_mel' + feat_name)
+                create_folder(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name)
                 for scaler_type in self._scaler_type:
-                    create_folder(self._feat_dir_norm + '_mel_' + scaler_type + feat_name)
-                    feat_wts = self.get_normalized_wts_file() + '_mel_' + scaler_type + feat_name
+                    create_folder(self._feat_dir_norm + f'_mel{self._nb_mel_bins}_' + scaler_type + feat_name)
+                    feat_wts = self.get_normalized_wts_file() + f'_mel{self._nb_mel_bins}_' + scaler_type + feat_name
                     if self._is_eval:
                         feat_scaler = joblib.load(feat_wts)
                         for file_cnt, file_name in enumerate(
@@ -941,7 +941,7 @@ class FeatureClass:
                                 mel_feat[:, :, ch] = np.dot(np.squeeze(temp_feat[:, :, ch]), weights[:, ::-1].T)
 
                             print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
-                            np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+                            np.save(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name), mel_feat)
 
                             del temp_feat
                             del mel_feat
@@ -952,8 +952,8 @@ class FeatureClass:
                             if self._quick_test:
                                 if file_cnt > 1:
                                     break
-                            if os.path.exists(os.path.join(self._feat_dir + '_mel' + feat_name, file_name)):
-                                mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
+                            if os.path.exists(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name)):
+                                mel_feat = np.load(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name))
                             else:
                                 # temp_feat = np.load(os.path.join(self._feat_dir + feat_name, file_name))
                                 temp_feat = librosa.power_to_db(
@@ -968,19 +968,19 @@ class FeatureClass:
                                     mel_feat[:, :, ch] = np.dot(np.squeeze(temp_feat[:, :, ch]), weights[:, ::-1].T)
 
                                 print('\t{}: {}, {}'.format(file_cnt, file_name, mel_feat.shape))
-                                np.save(os.path.join(self._feat_dir + '_mel' + feat_name, file_name), mel_feat)
+                                np.save(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name), mel_feat)
                                 del temp_feat
                             feat_scaler.partial_fit(
                                 mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1))
                             del mel_feat
                         joblib.dump(feat_scaler, feat_wts)
 
-                    for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + '_mel' + feat_name)):
+                    for file_cnt, file_name in enumerate(os.listdir(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name)):
                         if self._quick_test:
                             if file_cnt > 1:
                                 break
                         print('{}: {}-{}'.format(file_cnt, feat_name, file_name))
-                        mel_feat = np.load(os.path.join(self._feat_dir + '_mel' + feat_name, file_name))
+                        mel_feat = np.load(os.path.join(self._feat_dir + f'_mel{self._nb_mel_bins}' + feat_name, file_name))
 
                         mel_feat_norm = feat_scaler.transform(
                             mel_feat.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
@@ -988,7 +988,7 @@ class FeatureClass:
                             mel_feat.shape[-1],
                             -1).transpose(
                             (0, 2, 1))
-                        np.save(os.path.join(self._feat_dir_norm + '_mel_' + scaler_type + feat_name, file_name),
+                        np.save(os.path.join(self._feat_dir_norm + f'_mel{self._nb_mel_bins}_' + scaler_type + feat_name, file_name),
                                 mel_feat_norm)
 
                         del mel_feat
@@ -1191,7 +1191,7 @@ class FeatureClass:
     #     if self._is_mel:
     #         for feat_name in self._feature_list:
     #             for scaler_type in self._scaler_type:
-    #                 feat = np.load(os.path.join(self._feat_dir_norm + '_mel_' + scaler_type + feat_name, rand_name))
+    #                 feat = np.load(os.path.join(self._feat_dir_norm + f'_mel{self._nb_mel_bins}_' + scaler_type + feat_name, rand_name))
     #                 if feat.shape[1] > feat.shape[-1]:
     #                     plt.imshow(feat.transpose(0, 2, 1).reshape(feat.shape[0], -1).T, aspect='auto')
     #                 elif feat.shape[1] < feat.shape[-1]:
@@ -1199,7 +1199,7 @@ class FeatureClass:
     #                 plt.xlabel('Time axis')
     #                 plt.ylabel('Frequency axis(channels concatenated)')
     #                 plt.savefig(os.path.join(self._feat_label_dir, '{}_norm'.format(
-    #                     self._dataset_combination) + '_mel_' + scaler_type + feat_name + rand_name.replace('.npy',
+    #                     self._dataset_combination) + f'_mel{self._nb_mel_bins}_' + scaler_type + feat_name + rand_name.replace('.npy',
     #                                                                                                        '.jpg')),
     #                             dpi=300, bbox_inches="tight")
     #                 print(f"the shape of the feature {'norm_mel_' + scaler_type + feat_name} is={feat.shape}")
