@@ -117,7 +117,8 @@ def get_params(argv='1'):
         # Base folder containing the foa_dev/mic_dev and metadata folders
 
         # OUTPUT PATH
-        params['feat_label_dir'] = 'E:\Datasets\SELD2021\seld_feat_label_quick'
+        params['feat_label_dir'] = 'E:\Datasets\SELD2021\seld_feat_label_quick_temp'
+        params['nv_num'] = 32
         # Directory to dump extracted features and labels
 
         # DATASET LOADING PARAMETERS
