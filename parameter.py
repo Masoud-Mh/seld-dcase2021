@@ -61,7 +61,9 @@ def get_params(argv='1'):
         is_mel=True,
         scatter_wavelet_Q=126,
         scatter_wavelet_J=9,
-        nv_num=8
+        nv_num=8,
+        is_online_aug=False,
+        is_acs_aug=False
     )
     Q = params['scatter_wavelet_Q']
     params['feature_list'] = ['_spec', '_IPD', '_IPD_Cos', '_IPD_Sin', '_IV', f'_scatter_wavelet_Q{Q}_order_1',
@@ -139,7 +141,8 @@ def get_params(argv='1'):
         params['mode'] = 'eval'  # 'dev' - development or 'eval' - evaluation dataset
         params['nv_num'] = 32
         params['model_dir'] = "/home/ubuntu/DCASE-2021/models/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        params['dcase_output_dir'] = "/home/ubuntu/DCASE-2021/results/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        params['dcase_output_dir'] = "/home/ubuntu/DCASE-2021/results/" + datetime.datetime.now().strftime(
+            "%Y%m%d-%H%M%S")
 
     elif argv == '999':
         print("QUICK TEST MODE\n")
