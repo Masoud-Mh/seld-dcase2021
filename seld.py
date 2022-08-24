@@ -142,11 +142,15 @@ def main(argv):
         # start training
         for epoch_cnt in range(nb_epoch):
             start = time.time()
+            generator1 = data_gen_train.generate()
+            for ii in range(100):
+                a = next(generator1)
 
             # train once per epoch
             hist = model.fit_generator(
                 generator=data_gen_train.generate(),
-                steps_per_epoch=2 if params['quick_test'] else data_gen_train.get_total_batches_in_data(),
+                steps_per_epoch=2 if params['quick_test'] else data_gen_train.get_total_batches_in_data() if not params[
+                    'is_acs_aug'] else data_gen_train.get_total_batches_in_data() * 8,
                 epochs=params['epochs_per_fit'],
                 verbose=2,
             )

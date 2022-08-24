@@ -112,7 +112,7 @@ def get_params(argv='1'):
         params['dataset'] = 'foa'
 
     elif argv == '11':
-        params['quick_test'] = True  # If True: Trains/test on small subset of dataset, and # of epochs
+        params['quick_test'] = False  # If True: Trains/test on small subset of dataset, and # of epochs
 
         # INPUT PATH
         params['dataset_dir'] = 'E:\Datasets\SELD2021\DATASET'
@@ -120,11 +120,16 @@ def get_params(argv='1'):
 
         # OUTPUT PATH
         params['feat_label_dir'] = 'E:\Datasets\SELD2021\seld_feat_label_quick_temp'
-        params['nv_num'] = 32
+        params['nv_num'] = 8
         # Directory to dump extracted features and labels
 
         # DATASET LOADING PARAMETERS
         params['mode'] = 'eval'  # 'dev' - development or 'eval' - evaluation dataset
+
+        params['scaler_type'] = ['standard']  # have to be one of these 2 or the code will not give desired results
+        params['is_online_aug'] = True
+        is_acs_aug = False
+        params['feature_list'] = ['_spec', '_IPD']
 
     elif argv == '12':
         params['quick_test'] = False  # If True: Trains/test on small subset of dataset, and # of epochs

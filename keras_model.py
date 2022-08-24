@@ -2,16 +2,17 @@
 # The SELDnet architecture
 #
 
-from keras.layers import Bidirectional, Conv2D, MaxPooling2D, Input, Concatenate
-from keras.layers.core import Dense, Activation, Dropout, Reshape, Permute
-from keras.layers.recurrent import GRU
-from keras.layers.normalization import BatchNormalization
-from keras.models import Model
-from keras.layers.wrappers import TimeDistributed
-from keras.optimizers import Adam
-from keras.models import load_model
-import keras
-keras.backend.set_image_data_format('channels_first')
+from tensorflow.keras.layers import Bidirectional, Conv2D, MaxPooling2D, Input, Concatenate
+from tensorflow.keras.layers import Dense, Activation, Dropout, Reshape, Permute
+from tensorflow.keras.layers import GRU
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras import Model
+from tensorflow.keras.layers import TimeDistributed
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.models import load_model
+from tensorflow import keras
+import tensorflow as tf
+# keras.backend.set_image_data_format('channels_first')
 from IPython import embed
 import numpy as np
 
@@ -19,7 +20,7 @@ import numpy as np
 def get_model(data_in, data_out, dropout_rate, nb_cnn2d_filt, f_pool_size, t_pool_size,
               rnn_size, fnn_size, weights, doa_objective, is_accdoa):
     # model definition
-    spec_start = Input(shape=(data_in[-3], data_in[-2], data_in[-1]))
+    spec_start = Input(shape=(data_in[-2], data_in[-1], data_in[-3]))
 
     # CNN
     spec_cnn = spec_start
@@ -29,7 +30,7 @@ def get_model(data_in, data_out, dropout_rate, nb_cnn2d_filt, f_pool_size, t_poo
         spec_cnn = Activation('relu')(spec_cnn)
         spec_cnn = MaxPooling2D(pool_size=(t_pool_size[i], f_pool_size[i]))(spec_cnn)
         spec_cnn = Dropout(dropout_rate)(spec_cnn)
-    spec_cnn = Permute((2, 1, 3))(spec_cnn)
+    spec_cnn = Permute((1, 3, 2))(spec_cnn)
 
     # RNN    
     spec_rnn = Reshape((data_out[-2] if is_accdoa else data_out[0][-2], -1))(spec_cnn)

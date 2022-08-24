@@ -13,6 +13,62 @@ import random
 import torch
 
 
+# def foa_trans_spec(in_file, trans_indx):
+#     new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
+#     new[:, 0] = in_file[:, 0]
+#     new[:, 2] = in_file[:, 2] * trans_indx[-1]
+#     if trans_indx[1] in [0.5, -0.5]:
+#         new[:, 1] = in_file[:, -1] * 2 * trans_indx[1]
+#         new[:, -1] = in_file[:, 1] if trans_indx[0] * trans_indx[1] < 0 else -in_file[:, 1]
+#     else:
+#         new[:, 1] = in_file[:, 1] * trans_indx[0] if trans_indx[1] == 0 else in_file[:, 1] * trans_indx[0] * -1
+#         new[:, -1] = in_file[:, -1] if trans_indx[1] == 0 else -in_file[:, -1]
+#     return new
+
+def foa_trans_spec(in_file, trans_indx):
+    new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
+    new[..., 0] = in_file[..., 0]
+    new[..., 2] = in_file[..., 2]
+    if trans_indx[1] in [0.5, -0.5]:
+        new[..., 1] = in_file[..., -1]
+        new[..., -1] = in_file[..., 1]
+    else:
+        new[..., 1] = in_file[..., 1]
+        new[..., -1] = in_file[..., -1]
+    return new
+
+def foa_trans_IPD(in_file, trans_indx):
+    new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
+    new[:, 0] = in_file[:, 0]
+    new[:, 2] = in_file[:, 2] * trans_indx[-1]
+    if trans_indx[1] in [0.5, -0.5]:
+        new[:, 1] = in_file[:, -1] * 2 * trans_indx[1]
+        new[:, -1] = in_file[:, 1] if trans_indx[0] * trans_indx[1] < 0 else -in_file[:, 1]
+    else:
+        new[:, 1] = in_file[:, 1] * trans_indx[0] if trans_indx[1] == 0 else in_file[:, 1] * trans_indx[0] * -1
+        new[:, -1] = in_file[:, -1] if trans_indx[1] == 0 else -in_file[:, -1]
+    return new
+
+
+def label_trans(in_file, trans_indx):
+    new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
+    new[:, 3 * 12:4 * 12] = trans_indx[2] * in_file[:, 3 * 12:4 * 12]  # regarding Z coordinates/ channel 3
+    if trans_indx[1] in [0.5, -0.5]:
+        # regarding X coordinates/ channel 4
+        new[:, 1 * 12:2 * 12] = in_file[:, 2 * 12:3 * 12] if trans_indx[0] * trans_indx[1] < 0 else -in_file[:,
+                                                                                                     2 * 12:3 * 12]
+        # regarding Y coordinates/ channel 2
+        new[:, 2 * 12:3 * 12] = in_file[:, 1 * 12:2 * 12] * 2 * trans_indx[1]
+    else:
+        # regarding X coordinates/ channel 4
+        new[:, 1 * 12:2 * 12] = in_file[:, 1 * 12:2 * 12] if trans_indx[1] == 0 else -in_file[:, 1 * 12:2 * 12]
+        # regarding Y coordinates/ channel 2
+        new[:, 2 * 12:3 * 12] = in_file[:, 2 * 12:3 * 12] * trans_indx[0] if trans_indx[1] == 0 else in_file[:,
+                                                                                                     2 * 12:3 * 12] * \
+                                                                                                     trans_indx[0] * -1
+    return new
+
+
 def costume_padding(arr, pad_size):
     # tweaking to fit IPD, since IPD has 513 features and first order has 512
     diff = pad_size - arr.shape[0]
@@ -76,6 +132,14 @@ class DataGenerator(object):
         self._scaler_type = 'standard' if 'standard' in params['scaler_type'] else 'minmax'
         self._is_online_aug = params['is_online_aug']
         self._is_acs_aug = params['is_acs_aug']
+        self._DOA_TRANS_LIST = [[1, 1, 1]
+                                [-1, 0, -1],
+                                [1, 0.5, -1],
+                                [-1, 0.5, 1],
+                                [1, 1, 1],
+                                [-1, 1, -1],
+                                [1, -0.5, -1],
+                                [-1, -0.5, 1]]
 
         self._filenames_list = list()
         self._nb_frames_file = 0  # Using a fixed number of frames in feat files. Updated in _get_label_filenames_sizes()
@@ -565,7 +629,14 @@ class DataGenerator(object):
                     yield feat
 
             else:
-                for i in range(self._nb_total_batches):
+                if self._is_acs_aug:
+                    nb_total_batch_multiplier = 8
+                    trans_list_idx = 0
+                else:
+                    nb_total_batch_multiplier = 1
+                    trans_list_idx = 0
+
+                for i in range(self._nb_total_batches * nb_total_batch_multiplier):
 
                     # load feat and label to circular buffer. Always maintain atleast one batch worth feat and label in the
                     # circular buffer. If not keep refilling it.
@@ -620,6 +691,30 @@ class DataGenerator(object):
                         # temp_feat = np.load(os.path.join(self._feat_dir, self._filenames_list[file_cnt]))
                         temp_label = np.load(os.path.join(self._label_dir, self._filenames_list[file_cnt]))
 
+                        # here we perform ACS Augmentation based on DOA_TRANS_LIST
+                        if trans_list_idx:
+                            chn_num = 0
+                            for feat_numm, feat_namee in enumerate(self._feat_list):
+                                if feat_namee in ['_spec',
+                                                  f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_1',
+                                                  f'_scatter_wavelet_Q{self._scatter_wavelet_Q}_order_2',
+                                                  f'_scatter_wavelet_Q{self._scatter_wavelet_Q}', '_CWT_abs',
+                                                  '_SSQ_abs'
+                                                  ]:
+                                    new_feat = foa_trans_spec(in_file=temp_feat[..., chn_num:chn_num + 4],
+                                                         trans_indx=self._DOA_TRANS_LIST[trans_list_idx])
+                                    temp_feat[..., chn_num:chn_num + 4] = new_feat
+                                    chn_num += 4
+
+                                elif feat_namee in ['_IPD', '_IPD_Cos', '_IPD_Sin', '_IV', '_CWT_IPD', '_SSQ_IPD',
+                                                    '_CWT_IPD_Cos', '_CWT_IPD_Sin', '_SSQ_IPD_Cos', '_SSQ_IPD_Sin']:
+                                    print('hi')
+                                    print('work in progress')
+
+
+                            temp_label = label_trans(in_file=temp_label,
+                                                     trans_indx=self._DOA_TRANS_LIST[trans_list_idx])
+
                         for f_row in temp_feat:
                             self._circ_buf_feat.append(f_row)
                         for l_row in temp_label:
@@ -665,6 +760,11 @@ class DataGenerator(object):
                             label[:, :, self._nb_classes:] if self._doa_objective is 'mse' else label
                             # SED + DOA labels
                         ]
+
+                    # if self._is_acs_aug:
+                    #     for jj in range(feat.shape[0]):
+                    #         sa
+
                     if self._is_online_aug:
                         for jj in range(feat.shape[0]):
                             rand_num = np.random.random()
