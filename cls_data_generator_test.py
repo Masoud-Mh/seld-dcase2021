@@ -4,6 +4,8 @@
 #
 
 import os
+
+import joblib
 import numpy as np
 import cls_feature_class
 from IPython import embed
@@ -13,60 +15,170 @@ import random
 import torch
 
 
+# # def foa_trans_spec(in_file, trans_indx):
+# #     new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
+# #     new[:, 0] = in_file[:, 0]
+# #     new[:, 2] = in_file[:, 2] * trans_indx[-1]
+# #     if trans_indx[1] in [0.5, -0.5]:
+# #         new[:, 1] = in_file[:, -1] * 2 * trans_indx[1]
+# #         new[:, -1] = in_file[:, 1] if trans_indx[0] * trans_indx[1] < 0 else -in_file[:, 1]
+# #     else:
+# #         new[:, 1] = in_file[:, 1] * trans_indx[0] if trans_indx[1] == 0 else in_file[:, 1] * trans_indx[0] * -1
+# #         new[:, -1] = in_file[:, -1] if trans_indx[1] == 0 else -in_file[:, -1]
+# #     return new
+#
 # def foa_trans_spec(in_file, trans_indx):
 #     new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
-#     new[:, 0] = in_file[:, 0]
-#     new[:, 2] = in_file[:, 2] * trans_indx[-1]
+#     new[..., 0] = in_file[..., 0]
+#     new[..., 2] = in_file[..., 2]
 #     if trans_indx[1] in [0.5, -0.5]:
-#         new[:, 1] = in_file[:, -1] * 2 * trans_indx[1]
-#         new[:, -1] = in_file[:, 1] if trans_indx[0] * trans_indx[1] < 0 else -in_file[:, 1]
+#         new[..., 1] = in_file[..., -1]
+#         new[..., -1] = in_file[..., 1]
 #     else:
-#         new[:, 1] = in_file[:, 1] * trans_indx[0] if trans_indx[1] == 0 else in_file[:, 1] * trans_indx[0] * -1
-#         new[:, -1] = in_file[:, -1] if trans_indx[1] == 0 else -in_file[:, -1]
+#         new[..., 1] = in_file[..., 1]
+#         new[..., -1] = in_file[..., -1]
 #     return new
-
-def foa_trans_spec(in_file, trans_indx):
-    new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
-    new[..., 0] = in_file[..., 0]
-    new[..., 2] = in_file[..., 2]
-    if trans_indx[1] in [0.5, -0.5]:
-        new[..., 1] = in_file[..., -1]
-        new[..., -1] = in_file[..., 1]
-    else:
-        new[..., 1] = in_file[..., 1]
-        new[..., -1] = in_file[..., -1]
-    return new
-
-def foa_trans_IPD(in_file, trans_indx):
-    new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
-    new[:, 0] = in_file[:, 0]
-    new[:, 2] = in_file[:, 2] * trans_indx[-1]
-    if trans_indx[1] in [0.5, -0.5]:
-        new[:, 1] = in_file[:, -1] * 2 * trans_indx[1]
-        new[:, -1] = in_file[:, 1] if trans_indx[0] * trans_indx[1] < 0 else -in_file[:, 1]
-    else:
-        new[:, 1] = in_file[:, 1] * trans_indx[0] if trans_indx[1] == 0 else in_file[:, 1] * trans_indx[0] * -1
-        new[:, -1] = in_file[:, -1] if trans_indx[1] == 0 else -in_file[:, -1]
-    return new
-
-
-def label_trans(in_file, trans_indx):
-    new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
-    new[:, 3 * 12:4 * 12] = trans_indx[2] * in_file[:, 3 * 12:4 * 12]  # regarding Z coordinates/ channel 3
-    if trans_indx[1] in [0.5, -0.5]:
-        # regarding X coordinates/ channel 4
-        new[:, 1 * 12:2 * 12] = in_file[:, 2 * 12:3 * 12] if trans_indx[0] * trans_indx[1] < 0 else -in_file[:,
-                                                                                                     2 * 12:3 * 12]
-        # regarding Y coordinates/ channel 2
-        new[:, 2 * 12:3 * 12] = in_file[:, 1 * 12:2 * 12] * 2 * trans_indx[1]
-    else:
-        # regarding X coordinates/ channel 4
-        new[:, 1 * 12:2 * 12] = in_file[:, 1 * 12:2 * 12] if trans_indx[1] == 0 else -in_file[:, 1 * 12:2 * 12]
-        # regarding Y coordinates/ channel 2
-        new[:, 2 * 12:3 * 12] = in_file[:, 2 * 12:3 * 12] * trans_indx[0] if trans_indx[1] == 0 else in_file[:,
-                                                                                                     2 * 12:3 * 12] * \
-                                                                                                     trans_indx[0] * -1
-    return new
+#
+# def foa_trans_IPD(in_file, trans_indx, feat):
+#     new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
+#     if 'IV' in feat:
+#         new[..., 1] = in_file[..., 1] * trans_indx[-1]
+#         if trans_indx[1] in [0.5, -0.5]:
+#             new[..., 0] = in_file[..., -1] * 2 * trans_indx[1]
+#             new[..., -1] = in_file[..., 0] if trans_indx[0] * trans_indx[1] < 0 else -in_file[..., 0]
+#         else:
+#             new[..., 0] = in_file[..., 0] * trans_indx[0] if trans_indx[1] == 0 else in_file[..., 0] * trans_indx[
+#                 0] * -1
+#             new[..., -1] = in_file[..., -1] if trans_indx[1] == 0 else -in_file[..., -1]
+#
+#     elif 'IPD' in feat:
+#         if 'Sin' in feat or 'Cos' in feat:
+#             if 'minmax' in feat:
+#                 # scaled_neg_new = 1 - scaled_pos
+#                 new[..., 1] = in_file[..., 1] * trans_indx[-1] + (1 - trans_indx[-1]) / 2
+#                 if trans_indx[1] in [0.5, -0.5]:
+#                     new[..., 0] = in_file[..., -1] * 2 * trans_indx[1] + (1 - 2 * trans_indx[1]) / 2
+#                     new[..., -1] = in_file[..., 0] if trans_indx[0] * trans_indx[1] < 0 else (1 - in_file[..., 0])
+#                 else:
+#                     new[..., 0] = in_file[..., 0] * trans_indx[0] + (1 - trans_indx[0]) / 2 if trans_indx[1] == 0 else \
+#                     in_file[..., 0] * (-trans_indx[0]) + (1 - (-trans_indx[0])) / 2
+#                     new[..., -1] = in_file[..., -1] if trans_indx[1] == 0 else (1 - in_file[..., -1])
+#             elif 'standard' in feat:
+#
+#
+#         print('For IPD by negating, the degree reduces by Pi. for normilized IPD I do not know the effect yet')
+#         # for min max it is done by reducing 0.5 to get the negative feat
+#         # below is the tested way for standard scaler
+#         # trans_vecc = np.zeros(shape=phase_vector_temp.shape,
+#         #                       dtype=phase_vector_temp.dtype) + minmax_scaler.mean_.reshape(3, -1).transpose((1, 0)) + 1
+#         # trans_vecc_base_pos = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype) + 1
+#         # trans_vecc_base_neg = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype) - 1
+#         # scaled_trans_vecc = minmax_scaler.transform(
+#         #     trans_vecc.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+#         #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+#         # base_n = minmax_scaler.transform(
+#         #     trans_vecc_base_neg.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+#         #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+#         # base_p = minmax_scaler.transform(
+#         #     trans_vecc_base_pos.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+#         #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+#         #
+#         # scaled_neg_new = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype)
+#         # for i in range(scaled_neg_new.shape[0]):
+#         #     for j in range(scaled_neg_new.shape[1]):
+#         #         for k in range(scaled_neg_new.shape[2]):
+#         #             scaled_neg_new[i, j, k] = scaled_pos[i, j, k] - scaled_trans_vecc[i, j, k] if (
+#         #                         base_n[i, j, k] < scaled_pos[i, j, k] - scaled_trans_vecc[i, j, k] and base_p[i, j, k] >
+#         #                         scaled_pos[i, j, k] - scaled_trans_vecc[i, j, k]) else scaled_pos[i, j, k] + \
+#         #                                                                                scaled_trans_vecc[i, j, k]
+#         # scaled_neg_new = scaled_pos - scaled_trans_vecc
+#
+#         #the following is for the minmax
+#         # trans_vecc = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype) + 0.5
+#         # # scaled_trans_vecc = minmax_scaler.transform(
+#         # #     trans_vecc.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+#         # #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+#         #
+#         # scaled_neg_new = scaled_pos - trans_vecc
+#         # scaled_neg_new[scaled_neg_new < 0] = 1 + scaled_neg_new[scaled_neg_new < 0]
+#
+#
+#         #for ipd_cos and ipd_sin with min max
+#             # icos_pos = np.cos(phase_vector)
+#             # icos_neg = np.cos(phase_vector_n)
+#             #
+#             # isin_pos = np.sin(phase_vector)
+#             # isin_neg = np.sin(phase_vector_n)
+#             #
+#             # minmax_scaler = joblib.load('E:\seld_features\\foa_wtsminmax_IPD_Cos')
+#             # scaled_pos = minmax_scaler.transform(
+#             #     icos_pos.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+#             #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+#             #
+#             # scaled_neg = minmax_scaler.transform(
+#             #     icos_neg.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+#             #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+#             #
+#             # scaled_neg_new = 1 - scaled_pos
+#
+#         #for ipd_cos and ipd_sin with standard scaler
+#             # icos_pos = np.cos(phase_vector)
+#             # icos_neg = np.cos(phase_vector_n)
+#             #
+#             # isin_pos = np.sin(phase_vector)
+#             # isin_neg = np.sin(phase_vector_n)
+#             #
+#             # minmax_scaler = joblib.load('E:\seld_features\\foa_wtsstandard_IPD_Cos')
+#             # trans_vecc = np.zeros(shape=phase_vector.shape,
+#             #                       dtype=phase_vector.dtype) + 2 * minmax_scaler.mean_.reshape(3, -1).transpose(
+#             #     (1, 0))  # + 1
+#             #
+#             # trans_vecc_base_pos = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype) + 1
+#             # trans_vecc_base_neg = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype) - 1
+#             #
+#             # scaled_pos = minmax_scaler.transform(
+#             #     icos_pos.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+#             #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+#             #
+#             # scaled_neg = minmax_scaler.transform(
+#             #     icos_neg.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+#             #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+#             #
+#             # scaled_trans_vecc = minmax_scaler.transform(
+#             #     trans_vecc.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+#             #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+#             # base_n = minmax_scaler.transform(
+#             #     trans_vecc_base_neg.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+#             #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+#             # base_p = minmax_scaler.transform(
+#             #     trans_vecc_base_pos.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+#             #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+#             #
+#             # scaled_neg_new = -2 * scaled_trans_vecc - scaled_pos
+#
+#
+#     else:
+#         raise ValueError('wrong feature')
+#     return new
+#
+#
+# def label_trans(in_file, trans_indx):
+#     new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
+#     new[:, 3 * 12:4 * 12] = trans_indx[2] * in_file[:, 3 * 12:4 * 12]  # regarding Z coordinates/ channel 3
+#     if trans_indx[1] in [0.5, -0.5]:
+#         # regarding X coordinates/ channel 4
+#         new[:, 1 * 12:2 * 12] = in_file[:, 2 * 12:3 * 12] if trans_indx[0] * trans_indx[1] < 0 else -in_file[:,
+#                                                                                                      2 * 12:3 * 12]
+#         # regarding Y coordinates/ channel 2
+#         new[:, 2 * 12:3 * 12] = in_file[:, 1 * 12:2 * 12] * 2 * trans_indx[1]
+#     else:
+#         # regarding X coordinates/ channel 4
+#         new[:, 1 * 12:2 * 12] = in_file[:, 1 * 12:2 * 12] if trans_indx[1] == 0 else -in_file[:, 1 * 12:2 * 12]
+#         # regarding Y coordinates/ channel 2
+#         new[:, 2 * 12:3 * 12] = in_file[:, 2 * 12:3 * 12] * trans_indx[0] if trans_indx[1] == 0 else in_file[:,
+#                                                                                                      2 * 12:3 * 12] * \
+#                                                                                                      trans_indx[0] * -1
+#     return new
 
 
 def costume_padding(arr, pad_size):
@@ -140,6 +252,8 @@ class DataGenerator(object):
                                 [-1, 1, -1],
                                 [1, -0.5, -1],
                                 [-1, -0.5, 1]]
+        # scaler = joblib.load()
+        # self._std_sin_vec =
 
         self._filenames_list = list()
         self._nb_frames_file = 0  # Using a fixed number of frames in feat files. Updated in _get_label_filenames_sizes()
@@ -798,6 +912,172 @@ class DataGenerator(object):
             print('ERROR: Unknown data dimensions: {}'.format(data.shape))
             exit()
         return data
+
+    # def foa_trans_spec(in_file, trans_indx):
+    #     new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
+    #     new[:, 0] = in_file[:, 0]
+    #     new[:, 2] = in_file[:, 2] * trans_indx[-1]
+    #     if trans_indx[1] in [0.5, -0.5]:
+    #         new[:, 1] = in_file[:, -1] * 2 * trans_indx[1]
+    #         new[:, -1] = in_file[:, 1] if trans_indx[0] * trans_indx[1] < 0 else -in_file[:, 1]
+    #     else:
+    #         new[:, 1] = in_file[:, 1] * trans_indx[0] if trans_indx[1] == 0 else in_file[:, 1] * trans_indx[0] * -1
+    #         new[:, -1] = in_file[:, -1] if trans_indx[1] == 0 else -in_file[:, -1]
+    #     return new
+
+    @staticmethod
+    def foa_trans_spec(in_file, trans_indx):
+        new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
+        new[..., 0] = in_file[..., 0]
+        new[..., 2] = in_file[..., 2]
+        if trans_indx[1] in [0.5, -0.5]:
+            new[..., 1] = in_file[..., -1]
+            new[..., -1] = in_file[..., 1]
+        else:
+            new[..., 1] = in_file[..., 1]
+            new[..., -1] = in_file[..., -1]
+        return new
+
+    def foa_trans_IPD(self, in_file, trans_indx, feat):
+        new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
+        if 'IV' in feat:
+            new[..., 1] = in_file[..., 1] * trans_indx[-1]
+            if trans_indx[1] in [0.5, -0.5]:
+                new[..., 0] = in_file[..., -1] * 2 * trans_indx[1]
+                new[..., -1] = in_file[..., 0] if trans_indx[0] * trans_indx[1] < 0 else -in_file[..., 0]
+            else:
+                new[..., 0] = in_file[..., 0] * trans_indx[0] if trans_indx[1] == 0 else in_file[..., 0] * trans_indx[
+                    0] * -1
+                new[..., -1] = in_file[..., -1] if trans_indx[1] == 0 else -in_file[..., -1]
+
+        elif 'IPD' in feat:
+            if 'Sin' in feat or 'Cos' in feat:
+                if 'minmax' == self._scaler_type:
+                    # scaled_neg_new = 1 - scaled_pos
+                    new[..., 1] = in_file[..., 1] * trans_indx[-1] + (1 - trans_indx[-1]) / 2
+                    if trans_indx[1] in [0.5, -0.5]:
+                        new[..., 0] = in_file[..., -1] * 2 * trans_indx[1] + (1 - 2 * trans_indx[1]) / 2
+                        new[..., -1] = in_file[..., 0] if trans_indx[0] * trans_indx[1] < 0 else (1 - in_file[..., 0])
+                    else:
+                        new[..., 0] = in_file[..., 0] * trans_indx[0] + (1 - trans_indx[0]) / 2 if trans_indx[
+                                                                                                       1] == 0 else \
+                            in_file[..., 0] * (-trans_indx[0]) + (1 - (-trans_indx[0])) / 2
+                        new[..., -1] = in_file[..., -1] if trans_indx[1] == 0 else (1 - in_file[..., -1])
+                elif 'standard' == self._scaler_type:
+                    scaled_trans_vec = self.trans_vec_func()
+
+            print('For IPD by negating, the degree reduces by Pi. for normilized IPD I do not know the effect yet')
+            # for min max it is done by reducing 0.5 to get the negative feat
+            # below is the tested way for standard scaler
+            # trans_vecc = np.zeros(shape=phase_vector_temp.shape,
+            #                       dtype=phase_vector_temp.dtype) + minmax_scaler.mean_.reshape(3, -1).transpose((1, 0)) + 1
+            # trans_vecc_base_pos = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype) + 1
+            # trans_vecc_base_neg = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype) - 1
+            # scaled_trans_vecc = minmax_scaler.transform(
+            #     trans_vecc.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+            #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+            # base_n = minmax_scaler.transform(
+            #     trans_vecc_base_neg.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+            #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+            # base_p = minmax_scaler.transform(
+            #     trans_vecc_base_pos.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+            #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+            #
+            # scaled_neg_new = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype)
+            # for i in range(scaled_neg_new.shape[0]):
+            #     for j in range(scaled_neg_new.shape[1]):
+            #         for k in range(scaled_neg_new.shape[2]):
+            #             scaled_neg_new[i, j, k] = scaled_pos[i, j, k] - scaled_trans_vecc[i, j, k] if (
+            #                         base_n[i, j, k] < scaled_pos[i, j, k] - scaled_trans_vecc[i, j, k] and base_p[i, j, k] >
+            #                         scaled_pos[i, j, k] - scaled_trans_vecc[i, j, k]) else scaled_pos[i, j, k] + \
+            #                                                                                scaled_trans_vecc[i, j, k]
+            # scaled_neg_new = scaled_pos - scaled_trans_vecc
+
+            # the following is for the minmax
+            # trans_vecc = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype) + 0.5
+            # # scaled_trans_vecc = minmax_scaler.transform(
+            # #     trans_vecc.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+            # #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+            #
+            # scaled_neg_new = scaled_pos - trans_vecc
+            # scaled_neg_new[scaled_neg_new < 0] = 1 + scaled_neg_new[scaled_neg_new < 0]
+
+            # for ipd_cos and ipd_sin with min max
+            # icos_pos = np.cos(phase_vector)
+            # icos_neg = np.cos(phase_vector_n)
+            #
+            # isin_pos = np.sin(phase_vector)
+            # isin_neg = np.sin(phase_vector_n)
+            #
+            # minmax_scaler = joblib.load('E:\seld_features\\foa_wtsminmax_IPD_Cos')
+            # scaled_pos = minmax_scaler.transform(
+            #     icos_pos.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+            #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+            #
+            # scaled_neg = minmax_scaler.transform(
+            #     icos_neg.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+            #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+            #
+            # scaled_neg_new = 1 - scaled_pos
+
+            # for ipd_cos and ipd_sin with standard scaler
+            # icos_pos = np.cos(phase_vector)
+            # icos_neg = np.cos(phase_vector_n)
+            #
+            # isin_pos = np.sin(phase_vector)
+            # isin_neg = np.sin(phase_vector_n)
+            #
+            # minmax_scaler = joblib.load('E:\seld_features\\foa_wtsstandard_IPD_Cos')
+            # trans_vecc = np.zeros(shape=phase_vector.shape,
+            #                       dtype=phase_vector.dtype) + 2 * minmax_scaler.mean_.reshape(3, -1).transpose(
+            #     (1, 0))  # + 1
+            #
+            # trans_vecc_base_pos = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype) + 1
+            # trans_vecc_base_neg = np.zeros(shape=phase_vector_temp.shape, dtype=phase_vector_temp.dtype) - 1
+            #
+            # scaled_pos = minmax_scaler.transform(
+            #     icos_pos.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+            #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+            #
+            # scaled_neg = minmax_scaler.transform(
+            #     icos_neg.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+            #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+            #
+            # scaled_trans_vecc = minmax_scaler.transform(
+            #     trans_vecc.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+            #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+            # base_n = minmax_scaler.transform(
+            #     trans_vecc_base_neg.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+            #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+            # base_p = minmax_scaler.transform(
+            #     trans_vecc_base_pos.transpose((0, 2, 1)).reshape(self._max_feat_frames, -1)).reshape(
+            #     self._max_feat_frames, 3, -1).transpose((0, 2, 1))
+            #
+            # scaled_neg_new = -2 * scaled_trans_vecc - scaled_pos
+
+
+        else:
+            raise ValueError('wrong feature')
+        return new
+
+    def label_trans(in_file, trans_indx):
+        new = np.zeros(shape=in_file.shape, dtype=in_file.dtype)
+        new[:, 3 * 12:4 * 12] = trans_indx[2] * in_file[:, 3 * 12:4 * 12]  # regarding Z coordinates/ channel 3
+        if trans_indx[1] in [0.5, -0.5]:
+            # regarding X coordinates/ channel 4
+            new[:, 1 * 12:2 * 12] = in_file[:, 2 * 12:3 * 12] if trans_indx[0] * trans_indx[1] < 0 else -in_file[:,
+                                                                                                         2 * 12:3 * 12]
+            # regarding Y coordinates/ channel 2
+            new[:, 2 * 12:3 * 12] = in_file[:, 1 * 12:2 * 12] * 2 * trans_indx[1]
+        else:
+            # regarding X coordinates/ channel 4
+            new[:, 1 * 12:2 * 12] = in_file[:, 1 * 12:2 * 12] if trans_indx[1] == 0 else -in_file[:, 1 * 12:2 * 12]
+            # regarding Y coordinates/ channel 2
+            new[:, 2 * 12:3 * 12] = in_file[:, 2 * 12:3 * 12] * trans_indx[0] if trans_indx[1] == 0 else in_file[:,
+                                                                                                         2 * 12:3 * 12] * \
+                                                                                                         trans_indx[
+                                                                                                             0] * -1
+        return new
 
     @staticmethod
     def split_multi_channels(data, num_channels):

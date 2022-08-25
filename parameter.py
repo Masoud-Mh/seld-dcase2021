@@ -149,6 +149,26 @@ def get_params(argv='1'):
         params['dcase_output_dir'] = "/home/ubuntu/DCASE-2021/results/" + datetime.datetime.now().strftime(
             "%Y%m%d-%H%M%S")
 
+    elif argv == '13':
+        params['feature_list'] = ['_IPD', '_IV']
+        params['quick_test'] = True  # If True: Trains/test on small subset of dataset, and # of epochs
+
+        # INPUT PATH
+        params['dataset_dir'] = 'E:\Datasets\SELD2021\DATASET'
+        # Base folder containing the foa_dev/mic_dev and metadata folders
+
+        # OUTPUT PATH
+        params['feat_label_dir'] = 'E:\Datasets\SELD2021\seld_feat_label_quick_temp_ipd'
+        params['nv_num'] = 8
+        # Directory to dump extracted features and labels
+
+        # DATASET LOADING PARAMETERS
+        params['mode'] = 'eval'  # 'dev' - development or 'eval' - evaluation dataset
+
+        params['scaler_type'] = ['standard']  # have to be one of these 2 or the code will not give desired results
+        params['is_online_aug'] = True
+        is_acs_aug = False
+
     elif argv == '999':
         print("QUICK TEST MODE\n")
         params['quick_test'] = True
